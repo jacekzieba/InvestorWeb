@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  background: #f6f7f4;
+}
+
+body {
+  min-height: 100vh;
+}
+
+* {
+  scrollbar-color: #b9c4b7 transparent;
+}
+
+.chart-panel canvas {
+  max-height: 320px;
+}
