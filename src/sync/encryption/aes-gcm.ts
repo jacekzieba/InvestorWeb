@@ -12,7 +12,7 @@ export type EncryptedPayload = {
   nonce: string;
 };
 
-function toArrayBuffer(bytes: Uint8Array) {
+export function toArrayBuffer(bytes: Uint8Array) {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   return buffer;
@@ -34,7 +34,27 @@ export async function encryptJsonPayload(
   payload: unknown,
 ): Promise<EncryptedPayload> {
   const nonce = crypto.getRandomValues(new Uint8Array(AES_GCM_NONCE_BYTES));
-  const plaintext = utf8ToBytes(JSON.stringify(payload));
+
+  return encryptJsonPayloadWithNonce(key, payload, nonce);
+}
+
+export async function encryptJsonPayloadWithNonce(
+  key: CryptoKey,
+  payload: unknown,
+  nonce: Uint8Array,
+): Promise<EncryptedPayload> {
+  return encryptBytesWithNonce(key, utf8ToBytes(JSON.stringify(payload)), nonce);
+}
+
+export async function encryptBytesWithNonce(
+  key: CryptoKey,
+  plaintext: Uint8Array,
+  nonce: Uint8Array,
+): Promise<EncryptedPayload> {
+  if (nonce.byteLength !== AES_GCM_NONCE_BYTES) {
+    throw new Error("AES-GCM nonce must be exactly 96 bits.");
+  }
+
   const encrypted = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: toArrayBuffer(nonce) },
     key,
@@ -47,16 +67,26 @@ export async function encryptJsonPayload(
   };
 }
 
-export async function decryptJsonPayload<T>(
+export async function decryptBytes(
   key: CryptoKey,
   encryptedPayload: string,
   nonce: string,
-): Promise<T> {
+): Promise<Uint8Array> {
   const decrypted = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(nonce)) },
     key,
     toArrayBuffer(base64ToBytes(encryptedPayload)),
   );
 
-  return JSON.parse(bytesToUtf8(new Uint8Array(decrypted))) as T;
+  return new Uint8Array(decrypted);
+}
+
+export async function decryptJsonPayload<T>(
+  key: CryptoKey,
+  encryptedPayload: string,
+  nonce: string,
+): Promise<T> {
+  const decrypted = await decryptBytes(key, encryptedPayload, nonce);
+
+  return JSON.parse(bytesToUtf8(decrypted)) as T;
 }

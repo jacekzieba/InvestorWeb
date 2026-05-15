@@ -8,14 +8,25 @@ import {
   Clock3,
   WalletCards,
 } from "lucide-react";
+import { useState } from "react";
 import { AllocationChart } from "@/components/charts/allocation-chart";
 import { PortfolioValueChart } from "@/components/charts/portfolio-value-chart";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatCurrency, formatPercent } from "@/lib/money";
+import {
+  SyncUnlockPanel,
+  type SyncLoadResult,
+} from "@/features/sync/sync-unlock-panel";
 import { sampleSnapshot } from "./sample-data";
 
 export function DashboardOverview() {
-  const snapshot = sampleSnapshot;
+  const [syncResult, setSyncResult] = useState<SyncLoadResult | null>(null);
+  const snapshot = syncResult?.snapshot ?? sampleSnapshot;
+  const syncSummary = syncResult?.summary ?? null;
+  const syncStatus = syncSummary ? "Odszyfrowano" : "Demo";
+  const syncDetail = syncSummary
+    ? `${syncSummary.totalRecords} rekordów, dashboard z realnego sync`
+    : "Podłącz Supabase i odblokuj backup klucza";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -25,7 +36,9 @@ export function DashboardOverview() {
             Dashboard
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral/65">
-            Pierwsza wersja read-only pokazuje docelowy układ po odszyfrowaniu snapshotu w przeglądarce.
+            {syncResult
+              ? "Read-only dashboard złożony z odszyfrowanych rekordów sync."
+              : "Tryb demo pokazuje układ docelowego dashboardu przed odblokowaniem sync."}
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-md border border-base-300 bg-white px-3 py-2 text-sm text-neutral/65">
@@ -50,12 +63,30 @@ export function DashboardOverview() {
         />
         <StatCard
           label="Status sync"
-          value="Read-only"
-          detail="Szyfrowany zapis zostanie dodany po walidacji payloadów"
+          value={syncStatus}
+          detail={syncDetail}
           icon={Activity}
-          tone="warning"
+          tone={syncSummary ? "positive" : "warning"}
         />
       </section>
+
+      <SyncUnlockPanel onSyncLoaded={setSyncResult} />
+
+      {syncSummary ? (
+        <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {Object.entries(syncSummary.byType).map(([type, count]) => (
+            <div
+              key={type}
+              className="rounded-lg border border-base-300 bg-white px-4 py-3 shadow-sm"
+            >
+              <p className="text-xs font-medium uppercase tracking-normal text-neutral/50">
+                {type}
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-ink">{count}</p>
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
         <article className="chart-panel rounded-lg border border-base-300 bg-white p-5 shadow-sm">

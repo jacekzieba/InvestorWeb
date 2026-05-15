@@ -10,6 +10,7 @@ Pierwszy szkielet zawiera:
 - Tailwind CSS + daisyUI z motywem `investor`.
 - Shell aplikacji i read-only dashboard na przykładowym snapshotcie.
 - Supabase browser/server clients i typy minimalnego kontraktu DB.
+- Klientowy panel sesji Supabase, pobrania `encrypted_key_backups` i odblokowania rekordów sync passphrase.
 - Migrację Supabase dla `profiles`, `user_devices`, `encrypted_records` i `encrypted_key_backups` z RLS.
 - Web Crypto AES-GCM helpers zgodne z założeniem `ciphertext || auth_tag` w Base64.
 - Zod schemas dla sync envelope.
@@ -46,5 +47,6 @@ npm run test:e2e
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/STACK_DECISION.md](docs/STACK_DECISION.md)
 - [docs/SYNC_CONTRACT.md](docs/SYNC_CONTRACT.md)
+- [docs/CRYPTO_FIXTURES.md](docs/CRYPTO_FIXTURES.md)
 - [docs/CHARTING_DECISION.md](docs/CHARTING_DECISION.md)
 - [docs/ROADMAP.md](docs/ROADMAP.md)

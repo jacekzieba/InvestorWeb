@@ -26,4 +26,29 @@ describe("payload envelope", () => {
       }),
     ).toThrow();
   });
+
+  it("accepts a Swift-compatible flat payload when metadata versions are supplied", () => {
+    const envelope = parsePayloadEnvelope(
+      {
+        recordType: "asset",
+        id: "b8805a78-b5a5-4fe7-a83f-716117184d25",
+        symbol: "VWCE",
+      },
+      {
+        payloadVersion: 1,
+        schemaVersion: 1,
+      },
+    );
+
+    expect(envelope).toEqual({
+      type: "asset",
+      payloadVersion: 1,
+      schemaVersion: 1,
+      payload: {
+        recordType: "asset",
+        id: "b8805a78-b5a5-4fe7-a83f-716117184d25",
+        symbol: "VWCE",
+      },
+    });
+  });
 });

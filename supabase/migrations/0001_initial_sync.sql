@@ -14,7 +14,6 @@ create table if not exists public.user_devices (
 );
 
 create table if not exists public.encrypted_records (
-  id uuid not null,
   user_id uuid not null references auth.users(id) on delete cascade,
   record_type text not null check (
     record_type in (
@@ -26,25 +25,25 @@ create table if not exists public.encrypted_records (
       'settings'
     )
   ),
+  id uuid not null,
   encrypted_payload text not null,
   nonce text not null,
-  payload_version integer not null,
-  schema_version integer not null,
-  device_id text not null,
+  payload_version integer not null default 1,
+  schema_version integer not null default 1,
+  device_id text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
+  updated_at timestamptz not null,
   deleted_at timestamptz,
   primary key (user_id, record_type, id)
 );
 
 create table if not exists public.encrypted_key_backups (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  encrypted_key text not null,
-  nonce text not null,
+  encrypted_user_data_key text not null,
   salt text not null,
+  nonce text not null,
   kdf text not null,
   kdf_iterations integer not null,
-  created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 

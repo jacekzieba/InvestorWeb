@@ -3,7 +3,9 @@ node_modules/
 coverage/
 playwright-report/
 test-results/
+tools/swift-fixture-generator/.build/
 *.tsbuildinfo
 .env
 .env*.local
 !.env.example
+.DS_Store

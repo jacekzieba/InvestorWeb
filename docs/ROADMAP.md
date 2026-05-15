@@ -10,17 +10,17 @@
 
 ## Etap 1 - auth i klucz
 
-1. Ekrany logowania/rejestracji przez Supabase Auth.
-2. Obsluga sesji server-side przez cookies.
-3. Pobranie `encrypted_key_backups`.
-4. Odblokowanie `userDataKey` passphrase.
-5. Test vectors zgodnosci Web Crypto z CryptoKit.
+1. Ekran logowania przez Supabase Auth - gotowe.
+2. Obsluga sesji po stronie klienta - gotowe w MVP; server-side auth gate zostaje do dopiecia.
+3. Pobranie `encrypted_key_backups` - gotowe.
+4. Odblokowanie `userDataKey` passphrase - gotowe.
+5. Test vectors zgodnosci Web Crypto z CryptoKit - gotowe.
 
 ## Etap 2 - read-only sync
 
-1. Pobranie `encrypted_records`.
-2. Odszyfrowanie payloadow w przegladarce.
-3. Walidacja Zod dla envelope.
+1. Pobranie `encrypted_records` - gotowe dla aktywnych rekordow.
+2. Odszyfrowanie payloadow w przegladarce - gotowe.
+3. Walidacja Zod dla envelope - gotowe.
 4. Zlozenie `InvestorDataSnapshot`.
 5. Dashboard read-only z Chart.js.
 

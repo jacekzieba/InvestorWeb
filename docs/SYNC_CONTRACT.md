@@ -43,7 +43,7 @@ encrypted_records
 
 encrypted_key_backups
   user_id uuid primary key references auth.users(id)
-  encrypted_key text
+  encrypted_user_data_key text
   nonce text
   salt text
   kdf text
@@ -125,18 +125,14 @@ Przyklad logiczny:
 
 ```json
 {
-  "type": "transaction",
-  "payloadVersion": 1,
-  "schemaVersion": 1,
-  "payload": {
-    "id": "uuid",
-    "portfolioID": "uuid",
-    "date": "2026-05-15T00:00:00Z"
-  }
+  "recordType": "transaction",
+  "id": "uuid",
+  "portfolioID": "uuid",
+  "date": 769219200
 }
 ```
 
-Dokladny ksztalt JSON musi byc zgodny z obecnym Swift `Codable`. Pierwszym zadaniem implementacyjnym powinien byc eksport kilku testowych payloadow ze Swift i ich odczyt w TypeScript.
+Dokladny ksztalt JSON musi byc zgodny z obecnym Swift `Codable`. Obecny Swift `SyncPayloadEnvelope` koduje payload plasko z polem `recordType`; `payload_version` i `schema_version` sa metadanymi tabeli `encrypted_records`, a nie polami payloadu. Pierwszym zadaniem implementacyjnym powinien byc eksport kilku testowych payloadow ze Swift i ich odczyt w TypeScript.
 
 ## Konflikty
 

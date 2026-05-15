@@ -57,7 +57,7 @@ export type Database = {
           nonce: string;
           payload_version: number;
           schema_version: number;
-          device_id: string;
+          device_id: string | null;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -70,7 +70,7 @@ export type Database = {
           nonce: string;
           payload_version: number;
           schema_version: number;
-          device_id: string;
+          device_id?: string | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -80,7 +80,7 @@ export type Database = {
           nonce?: string;
           payload_version?: number;
           schema_version?: number;
-          device_id?: string;
+          device_id?: string | null;
           updated_at?: string;
           deleted_at?: string | null;
         };
@@ -88,26 +88,24 @@ export type Database = {
       encrypted_key_backups: {
         Row: {
           user_id: string;
-          encrypted_key: string;
+          encrypted_user_data_key: string;
           nonce: string;
           salt: string;
           kdf: string;
           kdf_iterations: number;
-          created_at: string;
           updated_at: string;
         };
         Insert: {
           user_id: string;
-          encrypted_key: string;
+          encrypted_user_data_key: string;
           nonce: string;
           salt: string;
           kdf: string;
           kdf_iterations: number;
-          created_at?: string;
           updated_at?: string;
         };
         Update: {
-          encrypted_key?: string;
+          encrypted_user_data_key?: string;
           nonce?: string;
           salt?: string;
           kdf?: string;
