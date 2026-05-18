@@ -1,8 +1,13 @@
 import { z } from "zod";
 import type {
   AllocationSlice,
+  CashBalance,
+  HoldingRow,
+  InstrumentRow,
   InvestorDataSnapshot,
+  PortfolioDetail,
   PortfolioSummary,
+  TransactionRow,
 } from "@/domain/models/investor-data";
 import type { DecryptedRecord } from "@/sync/records/encrypted-records";
 
@@ -96,6 +101,12 @@ type PortfolioValuation = {
   cashValue: number;
   positionCount: number;
   allocationValues: Map<string, number>;
+};
+
+type InstrumentPrice = {
+  value: number;
+  currency: string;
+  date: Date | null;
 };
 
 export function buildInvestorDataSnapshot(
@@ -295,20 +306,20 @@ function applyTransaction(ledger: Ledger, transaction: TransactionPayload) {
       addCash(ledger, currency, -grossAmount);
       break;
     case "buy":
-      addCashForTrade(ledger, transaction, -(grossAmount + fees), fxRate);
+      addCashForTrade(ledger, transaction, -(grossAmount + fees));
       addPosition(ledger, transaction.instrumentID, transaction.quantity ?? 0);
       break;
     case "sell":
-      addCashForTrade(ledger, transaction, grossAmount - fees - taxes, fxRate);
+      addCashForTrade(ledger, transaction, grossAmount - fees - taxes);
       addPosition(ledger, transaction.instrumentID, -(transaction.quantity ?? 0));
       break;
     case "dividend":
     case "interest":
     case "bondCoupon":
-      addCash(ledger, currency, grossAmount - taxes);
+      addCash(ledger, currency, grossAmount - fees - taxes);
       break;
     case "bondRedemption":
-      addCash(ledger, currency, grossAmount - taxes);
+      addCash(ledger, currency, grossAmount - fees - taxes);
       addPosition(ledger, transaction.instrumentID, -(transaction.quantity ?? 0));
       break;
     case "depositOpen":
@@ -316,7 +327,7 @@ function applyTransaction(ledger: Ledger, transaction: TransactionPayload) {
       addPosition(ledger, transaction.instrumentID, 1);
       break;
     case "depositClose":
-      addCash(ledger, currency, grossAmount - taxes);
+      addCash(ledger, currency, grossAmount - fees - taxes);
       addPosition(ledger, transaction.instrumentID, -(transaction.quantity ?? 1));
       break;
     case "fee":
@@ -360,13 +371,7 @@ function addCashForTrade(
   ledger: Ledger,
   transaction: TransactionPayload,
   amount: number,
-  fxRate: number | null | undefined,
 ) {
-  if (fxRate && transaction.currency !== "PLN") {
-    addCash(ledger, "PLN", amount * fxRate);
-    return;
-  }
-
   addCash(ledger, transaction.currency, amount);
 }
 
@@ -406,8 +411,8 @@ function valuePortfolio(
 
     const asset = assetsByID.get(instrumentID);
     const price = latestPriceForInstrument(instrumentID, dataset, asOf);
-    const currency = asset?.currency ?? "PLN";
-    const marketValue = quantity * price * fxRateForCurrency(currency, dataset, asOf);
+    const marketValue =
+      quantity * price.value * fxRateForCurrency(price.currency, dataset, asOf);
 
     if (marketValue <= EPSILON) {
       continue;
@@ -458,29 +463,42 @@ function latestPriceForInstrument(
   dataset: ParsedDataset,
   asOf: Date,
 ) {
-  const manualPrice = dataset.manualValuations
-    .filter(
-      (valuation) =>
+  const asset = dataset.assets.find((candidate) => candidate.id === instrumentID);
+  const manualValuation = dataset.manualValuations
+    .filter((valuation) => {
+      const date = toDate(valuation.date);
+      return (
         valuation.instrumentID === instrumentID &&
         valuation.value > 0 &&
-        toDate(valuation.date).getTime() <= asOf.getTime(),
-    )
-    .at(-1)?.value;
+        date.getTime() <= asOf.getTime()
+      );
+    })
+    .at(-1);
 
-  if (manualPrice && manualPrice > 0) {
-    return manualPrice;
+  if (manualValuation) {
+    return {
+      value: manualValuation.value,
+      currency: manualValuation.currency,
+      date: toDate(manualValuation.date),
+    } satisfies InstrumentPrice;
   }
 
-  return (
-    dataset.transactions
-      .filter(
-        (transaction) =>
-          transaction.instrumentID === instrumentID &&
-          (transaction.price ?? 0) > 0 &&
-          toDate(transaction.date).getTime() <= asOf.getTime(),
-      )
-      .at(-1)?.price ?? 0
-  );
+  const pricedTransaction = dataset.transactions
+    .filter((transaction) => {
+      const date = toDate(transaction.date);
+      return (
+        transaction.instrumentID === instrumentID &&
+        (transaction.price ?? 0) > 0 &&
+        date.getTime() <= asOf.getTime()
+      );
+    })
+    .at(-1);
+
+  return {
+    value: pricedTransaction?.price ?? 0,
+    currency: pricedTransaction?.currency ?? asset?.currency ?? "PLN",
+    date: pricedTransaction ? toDate(pricedTransaction.date) : null,
+  } satisfies InstrumentPrice;
 }
 
 function fxRateForCurrency(
@@ -492,16 +510,56 @@ function fxRateForCurrency(
     return 1;
   }
 
-  return (
-    dataset.transactions
-      .filter(
-        (transaction) =>
-          transaction.currency === currency &&
-          (transaction.fxRateToBase ?? 0) > 0 &&
-          toDate(transaction.date).getTime() <= asOf.getTime(),
-      )
-      .at(-1)?.fxRateToBase ?? 1
-  );
+  const directRate = dataset.transactions
+    .filter(
+      (transaction) =>
+        transaction.currency === currency &&
+        (transaction.fxRateToBase ?? 0) > 0 &&
+        toDate(transaction.date).getTime() <= asOf.getTime(),
+    )
+    .at(-1)?.fxRateToBase;
+
+  if (directRate && directRate > 0) {
+    return directRate;
+  }
+
+  const conversionRate = dataset.transactions
+    .filter((transaction) => {
+      const date = toDate(transaction.date);
+      return (
+        transaction.transactionType === "fxConversion" &&
+        transaction.currency === currency &&
+        transaction.targetCurrency === "PLN" &&
+        transaction.grossAmount > 0 &&
+        (transaction.targetGrossAmount ?? 0) > 0 &&
+        date.getTime() <= asOf.getTime()
+      );
+    })
+    .at(-1);
+
+  if (conversionRate?.targetGrossAmount) {
+    return conversionRate.targetGrossAmount / conversionRate.grossAmount;
+  }
+
+  const inverseConversionRate = dataset.transactions
+    .filter((transaction) => {
+      const date = toDate(transaction.date);
+      return (
+        transaction.transactionType === "fxConversion" &&
+        transaction.currency === "PLN" &&
+        transaction.targetCurrency === currency &&
+        transaction.grossAmount > 0 &&
+        (transaction.targetGrossAmount ?? 0) > 0 &&
+        date.getTime() <= asOf.getTime()
+      );
+    })
+    .at(-1);
+
+  if (inverseConversionRate?.targetGrossAmount) {
+    return inverseConversionRate.grossAmount / inverseConversionRate.targetGrossAmount;
+  }
+
+  return 1;
 }
 
 function buildAllocation(
@@ -542,9 +600,9 @@ function buildValuationSeries(
   dataset: ParsedDataset,
   asOf: Date,
 ) {
-  const sampleDates = lastMonthEndDates(asOf, 7);
+  const dates = fullMonthEndDates(dataset, asOf);
 
-  return sampleDates.map((date) => {
+  return dates.map((date) => {
     const value = accounts.reduce((sum, account) => {
       const ledger = computeLedger(
         transactionsForPortfolio(dataset.transactions, account.id),
@@ -555,22 +613,37 @@ function buildValuationSeries(
 
     return {
       label: monthLabel(date),
+      date: date.toISOString(),
       value,
     };
   });
 }
 
-function lastMonthEndDates(asOf: Date, count: number) {
+function fullMonthEndDates(dataset: ParsedDataset, asOf: Date): Date[] {
+  const allDates = [
+    ...dataset.transactions.map((t) => toDate(t.date)),
+    ...dataset.manualValuations.map((v) => toDate(v.date)),
+  ].filter((d) => !Number.isNaN(d.getTime()));
+
+  if (allDates.length === 0) {
+    return [asOf];
+  }
+
+  const earliest = new Date(Math.min(...allDates.map((d) => d.getTime())));
   const dates: Date[] = [];
 
-  for (let offset = count - 1; offset >= 0; offset -= 1) {
-    const date =
-      offset === 0
-        ? asOf
-        : new Date(
-            Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - offset + 1, 0),
-          );
-    dates.push(date);
+  let year = earliest.getUTCFullYear();
+  let month = earliest.getUTCMonth(); // month-end of earliest month
+
+  while (true) {
+    const monthEnd = new Date(Date.UTC(year, month + 1, 0));
+    if (monthEnd >= asOf) {
+      dates.push(asOf);
+      break;
+    }
+    dates.push(monthEnd);
+    month += 1;
+    if (month > 11) { month = 0; year += 1; }
   }
 
   return dates;
@@ -618,4 +691,154 @@ function toDate(value: z.infer<typeof swiftDateSchema>) {
   }
 
   return new Date(value);
+}
+
+export function buildPortfolioDetail(
+  records: DecryptedRecord[],
+  portfolioId: string,
+): PortfolioDetail | null {
+  const dataset = parseDataset(records);
+  const account = dataset.accounts.find((a) => a.id === portfolioId);
+  if (!account) return null;
+
+  const asOf = getAsOf(records, dataset);
+  const transactions = transactionsForPortfolio(dataset.transactions, portfolioId);
+  const ledger = computeLedger(transactions, asOf);
+  const assetsByID = new Map(dataset.assets.map((a) => [a.id, a]));
+
+  const holdings: HoldingRow[] = [];
+  let holdingsValue = 0;
+
+  for (const [instrumentId, quantity] of ledger.positions) {
+    if (quantity <= EPSILON) continue;
+
+    const asset = assetsByID.get(instrumentId);
+    const price = latestPriceForInstrument(instrumentId, dataset, asOf);
+    const marketValue =
+      quantity * price.value * fxRateForCurrency(price.currency, dataset, asOf);
+
+    if (marketValue <= EPSILON) continue;
+
+    holdingsValue += marketValue;
+    holdings.push({
+      instrumentId,
+      symbol: asset?.symbol ?? instrumentId.slice(0, 8),
+      name: asset?.name ?? asset?.symbol ?? instrumentId.slice(0, 8),
+      kind: asset?.kind ?? "unknown",
+      quantity,
+      lastPrice: price.value,
+      currency: price.currency,
+      marketValue,
+      portfolioPercent: 0,
+    });
+  }
+
+  const cashValue = valueCash(ledger, dataset.transactions, asOf);
+  const totalValue = holdingsValue + cashValue;
+
+  for (const h of holdings) {
+    h.portfolioPercent = totalValue > EPSILON ? (h.marketValue / totalValue) * 100 : 0;
+  }
+
+  holdings.sort((a, b) => b.marketValue - a.marketValue);
+
+  const cashBalances: CashBalance[] = [...ledger.cashBalances.entries()]
+    .filter(([, amount]) => Math.abs(amount) > EPSILON)
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const valuationSeries = buildValuationSeries([account], dataset, asOf);
+
+  return {
+    id: account.id,
+    name: account.name,
+    baseCurrency: account.baseCurrency,
+    totalValue,
+    cashValue,
+    holdings,
+    cashBalances,
+    valuationSeries,
+  };
+}
+
+export function buildTransactionList(records: DecryptedRecord[]): TransactionRow[] {
+  const dataset = parseDataset(records);
+  const accountsById = new Map(dataset.accounts.map((a) => [a.id, a]));
+  const assetsById = new Map(dataset.assets.map((a) => [a.id, a]));
+
+  return dataset.transactions
+    .map((tx) => {
+      const portfolio = accountsById.get(tx.portfolioID);
+      const asset = tx.instrumentID ? assetsById.get(tx.instrumentID) : undefined;
+      return {
+        id: tx.id,
+        date: toDate(tx.date).toISOString(),
+        portfolioId: tx.portfolioID,
+        portfolioName: portfolio?.name ?? tx.portfolioID.slice(0, 8),
+        instrumentId: tx.instrumentID ?? null,
+        instrumentSymbol: asset?.symbol ?? null,
+        instrumentName: asset?.name ?? null,
+        transactionType: tx.transactionType,
+        quantity: tx.quantity ?? null,
+        price: tx.price ?? null,
+        grossAmount: tx.grossAmount,
+        currency: tx.currency,
+        fees: tx.fees,
+        taxes: tx.taxes,
+      } satisfies TransactionRow;
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function buildInstrumentList(records: DecryptedRecord[]): InstrumentRow[] {
+  const dataset = parseDataset(records);
+  const asOf = getAsOf(records, dataset);
+
+  // Aggregate quantity held per instrument across all portfolios
+  const quantityByInstrument = new Map<string, number>();
+  const portfoliosByInstrument = new Map<string, Set<string>>();
+
+  for (const account of dataset.accounts) {
+    const txs = transactionsForPortfolio(dataset.transactions, account.id);
+    const ledger = computeLedger(txs, asOf);
+    for (const [instrumentId, qty] of ledger.positions) {
+      if (qty <= EPSILON) continue;
+      quantityByInstrument.set(instrumentId, (quantityByInstrument.get(instrumentId) ?? 0) + qty);
+      const pfSet = portfoliosByInstrument.get(instrumentId) ?? new Set();
+      pfSet.add(account.name);
+      portfoliosByInstrument.set(instrumentId, pfSet);
+    }
+  }
+
+  const rows: InstrumentRow[] = [];
+
+  for (const asset of dataset.assets) {
+    const totalQuantity = quantityByInstrument.get(asset.id) ?? 0;
+    const price = latestPriceForInstrument(asset.id, dataset, asOf);
+    const marketValue =
+      totalQuantity * price.value * fxRateForCurrency(price.currency, dataset, asOf);
+
+    rows.push({
+      id: asset.id,
+      symbol: asset.symbol,
+      name: asset.name,
+      kind: asset.kind,
+      currency: price.currency,
+      lastPrice: price.value,
+      lastPriceDate: price.date?.toISOString() ?? null,
+      totalQuantity,
+      marketValue,
+      portfolios: [...(portfoliosByInstrument.get(asset.id) ?? [])],
+    });
+  }
+
+  // Sort: held first (by market value), then unowned alphabetically
+  return rows.sort((a, b) => {
+    const aHeld = a.totalQuantity > EPSILON;
+    const bHeld = b.totalQuantity > EPSILON;
+    if (aHeld && !bHeld) return -1;
+    if (!aHeld && bHeld) return 1;
+    if (aHeld && bHeld) return b.marketValue - a.marketValue;
+    return a.name.localeCompare(b.name, "pl");
+  });
 }

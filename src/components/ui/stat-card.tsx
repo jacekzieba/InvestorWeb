@@ -1,46 +1,76 @@
-import { clsx } from "clsx";
-import type { LucideIcon } from "lucide-react";
+"use client";
+
+import type { ReactNode } from "react";
+import { Sparkline } from "@/components/charts/sparkline";
+import { COLORS, SURFACES } from "@/lib/design-tokens";
 
 type StatCardProps = {
   label: string;
-  value: string;
-  detail: string;
-  icon: LucideIcon;
-  tone?: "neutral" | "positive" | "warning";
+  value: string | ReactNode;
+  sub?: string | ReactNode;
+  spark?: number[];
+  accent?: string;
 };
 
-const toneClassName = {
-  neutral: "bg-secondary/10 text-secondary",
-  positive: "bg-success/10 text-success",
-  warning: "bg-warning/10 text-warning",
-};
-
-export function StatCard({
-  label,
-  value,
-  detail,
-  icon: Icon,
-  tone = "neutral",
-}: StatCardProps) {
+export function StatCard({ label, value, sub, spark, accent }: StatCardProps) {
   return (
-    <article className="rounded-lg border border-base-300 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-normal text-neutral/55">
-            {label}
-          </p>
-          <p className="mt-3 text-2xl font-semibold text-ink">{value}</p>
-        </div>
-        <span
-          className={clsx(
-            "grid size-10 shrink-0 place-items-center rounded-md",
-            toneClassName[tone],
-          )}
-        >
-          <Icon size={19} aria-hidden />
-        </span>
+    <div
+      style={{
+        ...SURFACES.glassCard,
+        padding: "20px 22px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        position: "relative",
+        overflow: "hidden",
+        minHeight: 130,
+      }}
+    >
+      {accent && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 24,
+            bottom: 24,
+            width: 3,
+            borderRadius: "0 3px 3px 0",
+            background: accent,
+          }}
+        />
+      )}
+      <div
+        style={{
+          fontSize: 10.5,
+          fontWeight: 700,
+          color: COLORS.subtle,
+          textTransform: "uppercase",
+          letterSpacing: ".10em",
+        }}
+      >
+        {label}
       </div>
-      <p className="mt-4 text-sm text-neutral/60">{detail}</p>
-    </article>
+      <div
+        style={{
+          fontSize: 26,
+          fontWeight: 700,
+          color: COLORS.text,
+          lineHeight: 1.1,
+          fontVariantNumeric: "tabular-nums",
+          letterSpacing: "-0.01em",
+          marginTop: 2,
+        }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div style={{ fontSize: 12, color: COLORS.muted, lineHeight: 1.45 }}>{sub}</div>
+      )}
+      {spark && (
+        <div style={{ marginTop: "auto", paddingTop: 6 }}>
+          <Sparkline data={spark} width={180} height={24} color={COLORS.profit} strokeWidth={1.5} />
+        </div>
+      )}
+    </div>
   );
 }

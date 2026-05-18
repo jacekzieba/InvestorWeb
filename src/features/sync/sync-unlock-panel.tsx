@@ -2,16 +2,8 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { useQuery } from "@tanstack/react-query";
-import {
-  CheckCircle2,
-  KeyRound,
-  Loader2,
-  LogIn,
-  LogOut,
-  ShieldAlert,
-} from "lucide-react";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createBrowserSupabaseClientOrNull } from "@/supabase/client";
 import { unlockUserDataKey } from "@/sync/encryption/key-backup";
 import { decryptEncryptedRecords } from "@/sync/records/encrypted-records";
@@ -20,11 +12,23 @@ import {
   fetchActiveEncryptedRecords,
   fetchEncryptedKeyBackup,
 } from "@/sync/records/supabase-sync-store";
+import { flushPendingSyncOperations } from "@/sync/records/record-writer";
 import {
   summarizeDecryptedRecords,
   type SyncRecordSummary,
 } from "@/sync/records/sync-summary";
 import type { InvestorDataSnapshot } from "@/domain/models/investor-data";
+import type { DecryptedRecord } from "@/sync/records/encrypted-records";
+import { useSyncStore } from "@/sync/store/sync-store";
+
+// ── Design tokens ────────────────────────────────────────────────
+const INK = "#1C3144";
+const MUTED = "rgba(28,49,68,0.58)";
+const SUBTLE = "rgba(28,49,68,0.38)";
+const PROFIT = "#2D9C6B";
+const LOSS = "#B85042";
+const AMBER = "#B87830";
+const PAPER = "#FBFAF6";
 
 type SessionStatus =
   | "checking"
@@ -35,6 +39,7 @@ type SessionStatus =
 type UnlockStatus = "idle" | "unlocking" | "ready" | "error";
 
 export type SyncLoadResult = {
+  records: DecryptedRecord[];
   summary: SyncRecordSummary;
   snapshot: InvestorDataSnapshot;
 };
@@ -45,15 +50,13 @@ export function SyncUnlockPanel({
   onSyncLoaded(result: SyncLoadResult | null): void;
 }) {
   const supabase = useMemo(() => createBrowserSupabaseClientOrNull(), []);
-  const [sessionStatus, setSessionStatus] =
-    useState<SessionStatus>("checking");
+  const setCredentials = useSyncStore((s) => s.setCredentials);
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("checking");
   const [session, setSession] = useState<Session | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [unlockStatus, setUnlockStatus] = useState<UnlockStatus>("idle");
   const [unlockError, setUnlockError] = useState<string | null>(null);
-  const [lastSummary, setLastSummary] = useState<SyncRecordSummary | null>(
-    null,
-  );
+  const [lastSummary, setLastSummary] = useState<SyncRecordSummary | null>(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -64,16 +67,12 @@ export function SyncUnlockPanel({
     let mounted = true;
 
     supabase.auth.getSession().then(({ data, error }) => {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       if (error) {
         setSession(null);
         setSessionStatus("unauthenticated");
         return;
       }
-
       setSession(data.session);
       setSessionStatus(data.session ? "authenticated" : "unauthenticated");
     });
@@ -84,7 +83,7 @@ export function SyncUnlockPanel({
         setSessionStatus(nextSession ? "authenticated" : "unauthenticated");
         setLastSummary(null);
         onSyncLoaded(null);
-      },
+      }
     );
 
     return () => {
@@ -97,224 +96,330 @@ export function SyncUnlockPanel({
     queryKey: ["encrypted-key-backup", session?.user.id],
     enabled: Boolean(supabase && session),
     queryFn: () => {
-      if (!supabase) {
-        throw new Error("Supabase client is not configured.");
-      }
-
+      if (!supabase) throw new Error("Supabase client is not configured.");
       return fetchEncryptedKeyBackup(supabase);
     },
   });
 
   async function handleUnlock(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (!supabase || !keyBackupQuery.data) {
-      return;
-    }
+    if (!supabase || !keyBackupQuery.data) return;
 
     setUnlockStatus("unlocking");
     setUnlockError(null);
 
     try {
-      const userDataKey = await unlockUserDataKey(
-        keyBackupQuery.data,
-        passphrase,
-      );
+      const userDataKey = await unlockUserDataKey(keyBackupQuery.data, passphrase);
+      await flushPendingSyncOperations(supabase);
       const encryptedRecords = await fetchActiveEncryptedRecords(supabase);
-      const decryptedRecords = await decryptEncryptedRecords(
-        userDataKey,
-        encryptedRecords,
-      );
+      const decryptedRecords = await decryptEncryptedRecords(userDataKey, encryptedRecords);
       const summary = summarizeDecryptedRecords(decryptedRecords);
       const snapshot = buildInvestorDataSnapshot(decryptedRecords);
 
+      setCredentials(userDataKey, supabase);
       setLastSummary(summary);
-      onSyncLoaded({ summary, snapshot });
+      onSyncLoaded({ records: decryptedRecords, summary, snapshot });
       setPassphrase("");
       setUnlockStatus("ready");
     } catch (error) {
       setUnlockStatus("error");
       setUnlockError(
-        error instanceof Error
-          ? error.message
-          : "Nie udało się odblokować danych.",
+        error instanceof Error ? error.message : "Nie udało się odblokować danych."
       );
     }
   }
 
   async function handleSignOut() {
-    if (!supabase) {
-      return;
-    }
-
+    if (!supabase) return;
     await supabase.auth.signOut();
   }
 
+  // ── State: config missing ─────────────────────────────────────
   if (sessionStatus === "config-missing") {
     return (
-      <SyncPanelFrame
-        icon={ShieldAlert}
+      <StatusRow
+        dot={AMBER}
         title="Sync nie jest skonfigurowany"
-        detail="Dashboard działa w trybie demo. Ustaw NEXT_PUBLIC_SUPABASE_URL i NEXT_PUBLIC_SUPABASE_ANON_KEY, żeby włączyć logowanie i pobieranie zaszyfrowanych rekordów."
+        detail="Ustaw NEXT_PUBLIC_SUPABASE_URL i NEXT_PUBLIC_SUPABASE_ANON_KEY, żeby włączyć logowanie."
       />
     );
   }
 
+  // ── State: checking ───────────────────────────────────────────
   if (sessionStatus === "checking") {
     return (
-      <SyncPanelFrame
-        icon={Loader2}
-        title="Sprawdzanie sesji"
+      <StatusRow
+        dot={SUBTLE}
+        title="Sprawdzanie sesji…"
         detail="Weryfikuję lokalną sesję Supabase."
-        iconClassName="animate-spin"
+        loading
       />
     );
   }
 
+  // ── State: unauthenticated ────────────────────────────────────
   if (sessionStatus === "unauthenticated") {
     return (
-      <SyncPanelFrame
-        icon={LogIn}
-        title="Zaloguj się, żeby pobrać sync"
-        detail="Po zalogowaniu web pobierze backup klucza i odszyfruje rekordy lokalnie w przeglądarce."
-        action={
-          <Link href="/login" className="btn btn-primary btn-sm">
-            Przejdź do logowania
-          </Link>
-        }
-      />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "20px 22px",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: INK }}>
+            Zaloguj się, żeby pobrać sync
+          </div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>
+            Po zalogowaniu web odszyfruje rekordy lokalnie w przeglądarce.
+          </div>
+        </div>
+        <Link
+          href="/login"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 16px",
+            borderRadius: 9,
+            background: INK,
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            textDecoration: "none",
+            boxShadow: "0 3px 10px rgba(28,49,68,0.22), inset 0 0.5px 0 rgba(255,255,255,0.18)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Zaloguj się →
+        </Link>
+      </div>
     );
   }
 
+  // ── State: authenticated ──────────────────────────────────────
   const hasBackup = Boolean(keyBackupQuery.data);
   const isBusy = unlockStatus === "unlocking";
 
   return (
-    <section className="rounded-lg border border-base-300 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+    <div style={{ padding: "20px 22px" }}>
+      {/* User row */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 16,
+          flexWrap: "wrap",
+          gap: 10,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: INK }}>
             {lastSummary ? (
-              <CheckCircle2 size={20} aria-hidden />
+              <span>
+                <span style={{ color: PROFIT }}>✓</span>{" "}
+                {session?.user.email ?? session?.user.id}
+              </span>
             ) : (
-              <KeyRound size={20} aria-hidden />
+              session?.user.email ?? session?.user.id
             )}
-          </span>
-          <div>
-            <h2 className="text-lg font-semibold text-ink">
-              Odblokowanie prywatnego sync
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-neutral/65">
-              Zalogowano jako {session?.user.email ?? session?.user.id}. Klucz
-              danych pozostaje tylko w pamięci tej karty.
-            </p>
-            {lastSummary ? (
-              <p className="mt-2 text-sm text-success">
-                Odszyfrowano {lastSummary.totalRecords} rekordów. Ostatnia
-                zmiana:{" "}
-                {lastSummary.latestUpdatedAt
-                  ? new Date(lastSummary.latestUpdatedAt).toLocaleString(
-                      "pl-PL",
-                    )
-                  : "brak rekordów"}
-                .
-              </p>
-            ) : null}
           </div>
+          {lastSummary ? (
+            <div style={{ fontSize: 12, color: PROFIT, marginTop: 3 }}>
+              {lastSummary.totalRecords} rekordów odszyfrowanych. Ostatnia zmiana:{" "}
+              {lastSummary.latestUpdatedAt
+                ? new Date(lastSummary.latestUpdatedAt).toLocaleString("pl-PL")
+                : "brak"}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>
+              Klucz danych pozostaje tylko w pamięci tej karty.
+            </div>
+          )}
         </div>
-
-        <button className="btn btn-ghost btn-sm" onClick={handleSignOut}>
-          <LogOut size={16} aria-hidden />
+        <button
+          onClick={handleSignOut}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 8,
+            border: "0.5px solid rgba(28,49,68,0.12)",
+            background: "rgba(28,49,68,0.04)",
+            color: MUTED,
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+        >
           Wyloguj
         </button>
       </div>
 
-      {keyBackupQuery.isLoading ? (
-        <div className="mt-5 flex items-center gap-2 text-sm text-neutral/60">
-          <Loader2 size={16} className="animate-spin" aria-hidden />
-          Pobieranie backupu klucza...
+      {/* Key backup loading */}
+      {keyBackupQuery.isLoading && (
+        <div style={{ fontSize: 12, color: SUBTLE, display: "flex", alignItems: "center", gap: 8 }}>
+          <SpinnerDot />
+          Pobieranie backupu klucza…
         </div>
-      ) : null}
+      )}
 
-      {keyBackupQuery.isError ? (
-        <p className="mt-5 text-sm text-error">
+      {keyBackupQuery.isError && (
+        <div style={{ fontSize: 12, color: LOSS, marginTop: 4 }}>
           Nie udało się pobrać backupu klucza:{" "}
           {keyBackupQuery.error instanceof Error
             ? keyBackupQuery.error.message
             : "nieznany błąd"}
-        </p>
-      ) : null}
+        </div>
+      )}
 
-      {!keyBackupQuery.isLoading && !hasBackup ? (
-        <p className="mt-5 text-sm text-warning">
-          Konto nie ma jeszcze backupu klucza w `encrypted_key_backups`.
-        </p>
-      ) : null}
+      {!keyBackupQuery.isLoading && !hasBackup && (
+        <div style={{ fontSize: 12, color: AMBER, marginTop: 4 }}>
+          Konto nie ma jeszcze backupu klucza w <code>encrypted_key_backups</code>.
+        </div>
+      )}
 
-      {hasBackup ? (
+      {/* Passphrase form */}
+      {hasBackup && unlockStatus !== "ready" && (
         <form
-          className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]"
           onSubmit={handleUnlock}
+          style={{
+            display: "grid",
+            gap: 10,
+            gridTemplateColumns: "minmax(0,1fr) auto",
+            alignItems: "end",
+          }}
         >
-          <label className="form-control">
-            <span className="label-text">Passphrase backupu klucza</span>
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 11,
+                fontWeight: 600,
+                color: SUBTLE,
+                textTransform: "uppercase",
+                letterSpacing: ".08em",
+                marginBottom: 6,
+              }}
+            >
+              Passphrase backupu klucza
+            </label>
             <input
-              className="input input-bordered mt-1"
               type="password"
               value={passphrase}
-              onChange={(event) => setPassphrase(event.target.value)}
+              onChange={(e) => setPassphrase(e.target.value)}
               autoComplete="current-password"
               required
+              placeholder="Wprowadź passphrase…"
+              style={{
+                width: "100%",
+                padding: "9px 12px",
+                borderRadius: 9,
+                border: "0.5px solid rgba(28,49,68,0.15)",
+                background: PAPER,
+                fontSize: 13,
+                color: INK,
+                outline: "none",
+                boxShadow: "inset 0 1px 3px rgba(28,49,68,0.06)",
+              }}
             />
-          </label>
+          </div>
           <button
-            className="btn btn-primary self-end"
+            type="submit"
             disabled={isBusy || passphrase.length === 0}
+            style={{
+              padding: "9px 16px",
+              borderRadius: 9,
+              border: "none",
+              background: isBusy || passphrase.length === 0 ? "rgba(28,49,68,0.12)" : INK,
+              color: isBusy || passphrase.length === 0 ? SUBTLE : "#fff",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: isBusy || passphrase.length === 0 ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              boxShadow:
+                isBusy || passphrase.length === 0
+                  ? "none"
+                  : "0 3px 10px rgba(28,49,68,0.18), inset 0 0.5px 0 rgba(255,255,255,0.18)",
+              transition: "background .15s",
+            }}
           >
-            {isBusy ? (
-              <Loader2 size={16} className="animate-spin" aria-hidden />
-            ) : (
-              <KeyRound size={16} aria-hidden />
-            )}
-            Odblokuj dane
+            {isBusy ? <SpinnerDot /> : "🔑"}
+            {isBusy ? "Odszyfrowuję…" : "Odblokuj"}
           </button>
         </form>
-      ) : null}
+      )}
 
-      {unlockStatus === "error" ? (
-        <p className="mt-3 text-sm text-error">
+      {unlockStatus === "error" && (
+        <div style={{ fontSize: 12, color: LOSS, marginTop: 10 }}>
           {unlockError ?? "Nie udało się odblokować danych."}
-        </p>
-      ) : null}
-    </section>
+        </div>
+      )}
+    </div>
   );
 }
 
-function SyncPanelFrame({
-  icon: Icon,
+// ── Helper components ────────────────────────────────────────────
+function StatusRow({
+  dot,
   title,
   detail,
-  action,
-  iconClassName,
+  loading,
 }: {
-  icon: typeof KeyRound;
+  dot: string;
   title: string;
   detail: string;
-  action?: React.ReactNode;
-  iconClassName?: string;
+  loading?: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-4 rounded-lg border border-base-300 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
-      <div className="flex gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-          <Icon size={20} className={iconClassName} aria-hidden />
-        </span>
-        <div>
-          <h2 className="text-lg font-semibold text-ink">{title}</h2>
-          <p className="mt-1 text-sm leading-6 text-neutral/65">{detail}</p>
-        </div>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: "18px 22px",
+      }}
+    >
+      {loading ? (
+        <SpinnerDot size={8} color={dot} />
+      ) : (
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: dot,
+            flexShrink: 0,
+          }}
+        />
+      )}
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{title}</div>
+        <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{detail}</div>
       </div>
-      {action}
-    </section>
+    </div>
+  );
+}
+
+function SpinnerDot({ size = 10, color = "#1C3144" }: { size?: number; color?: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        border: `1.5px solid ${color}`,
+        borderTopColor: "transparent",
+        animation: "spin .7s linear infinite",
+        flexShrink: 0,
+      }}
+    />
   );
 }

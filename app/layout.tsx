@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/providers/providers";
+import { COLORS } from "@/lib/design-tokens";
 
 export const metadata: Metadata = {
   title: "InvestorWeb",
@@ -14,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pl" data-theme="investor">
-      <body className="bg-base-100 text-base-content antialiased">
+      <body className="antialiased" style={{ background: COLORS.bg, color: COLORS.text }}>
         <Providers>{children}</Providers>
       </body>
     </html>

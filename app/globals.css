@@ -4,20 +4,83 @@
 
 :root {
   color-scheme: light;
+  --inv-bg: #F4F7F2;
+  --inv-surface: #FFFFFF;
+  --inv-surface-alt: #F0F3EE;
+  --inv-border: #E3E7DF;
+  --inv-text: #1C3144;
+  --inv-text-muted: #6A7585;
+  --inv-font-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", system-ui, sans-serif;
 }
 
 html {
-  background: #f6f7f4;
+  background: var(--inv-bg);
 }
 
 body {
   min-height: 100vh;
+  background: var(--inv-bg);
+  color: var(--inv-text);
+  font-family: var(--inv-font-system);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Responsive grid helpers — avoids Tailwind arbitrary value conflicts with daisyUI */
+.grid-chart-alloc {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+.grid-holdings-sync {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 1024px) {
+  .grid-chart-alloc {
+    grid-template-columns: 2fr 1fr;
+  }
+  .grid-holdings-sync {
+    grid-template-columns: 1.6fr 1fr;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(106, 117, 133, 0.26);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 * {
-  scrollbar-color: #b9c4b7 transparent;
+  scrollbar-color: rgba(106, 117, 133, 0.26) transparent;
+  box-sizing: border-box;
 }
 
-.chart-panel canvas {
-  max-height: 320px;
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.2s ease;
+}
+
+.animate-fade-up {
+  animation: fade-up 0.25s ease;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

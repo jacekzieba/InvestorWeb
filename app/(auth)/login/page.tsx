@@ -1,16 +1,69 @@
 import { LoginForm } from "@/features/auth/login-form";
+import { COLORS, SHADOWS, SURFACES } from "@/lib/design-tokens";
 
 export default function LoginPage() {
   return (
-    <main className="grid min-h-screen place-items-center bg-base-100 px-6">
-      <section className="w-full max-w-md rounded-lg border border-base-300 bg-white p-8 shadow-panel">
-        <div className="mb-8">
-          <p className="text-sm font-medium text-primary">InvestorWeb</p>
-          <h1 className="mt-2 text-2xl font-semibold text-ink">Logowanie</h1>
-          <p className="mt-2 text-sm leading-6 text-neutral/70">
+    <main
+      style={{
+        minHeight: "100vh",
+        background: COLORS.bg,
+        display: "grid",
+        placeItems: "center",
+        padding: "24px 16px",
+      }}
+    >
+      <section
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          ...SURFACES.glassPanel,
+          borderRadius: 18,
+          boxShadow: SHADOWS.cardStrong,
+          padding: "36px 32px",
+        }}
+      >
+        {/* Brand */}
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 9,
+                background: COLORS.text,
+                color: COLORS.white,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 15,
+                fontWeight: 800,
+                boxShadow: SHADOWS.button,
+              }}
+            >
+              I
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.text }}>Investor</div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: COLORS.subtle,
+                  textTransform: "uppercase",
+                  letterSpacing: ".08em",
+                }}
+              >
+                Web · v0.1
+              </div>
+            </div>
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: COLORS.text, letterSpacing: "-0.01em" }}>
+            Logowanie
+          </h1>
+          <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>
             Po zalogowaniu klucz danych będzie odblokowywany lokalnie w przeglądarce.
           </p>
         </div>
+
         <LoginForm />
       </section>
     </main>
