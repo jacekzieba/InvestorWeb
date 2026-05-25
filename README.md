@@ -66,4 +66,5 @@ npm run test:e2e
 - [docs/STAGING_VALIDATION_REPORT.md](docs/STAGING_VALIDATION_REPORT.md)
 - [docs/STAGING_RUNBOOK.md](docs/STAGING_RUNBOOK.md)
 - [docs/STAGING_RISKS.md](docs/STAGING_RISKS.md)
+- [docs/MACOS_WEB_MIGRATION_PLAN.md](docs/MACOS_WEB_MIGRATION_PLAN.md)
 - [docs/ROADMAP.md](docs/ROADMAP.md)

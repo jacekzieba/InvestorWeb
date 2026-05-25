@@ -43,3 +43,7 @@ Status ryzyk:
 | Brak automatycznego diffu snapshot web-native | Potwierdzone | Istnieje reczny raport i testy domeny, ale brak eksportu/diffu z natywnym snapshotem | Przy danych z refactorowanego macOS dodac fixtures albo maszynowy diff |
 
 Blokery produkcyjne pozostaja zalezne od realnej walidacji web-native na staging. Lokalnie nie da sie potwierdzic natywnego dekodowania rekordow web ani izolacji RLS miedzy realnymi uzytkownikami.
+
+## Weryfikacja refactoru macOS
+
+Branch remote `origin/claude/hungry-goodall-1227f7` z repo `jacekzieba/Investor` potwierdza, ze `income` jest realnym rekordem sync po stronie macOS, a nie przyszlym placeholderem. Szczegolowy plan domkniecia kompatybilnosci jest w `docs/MACOS_WEB_MIGRATION_PLAN.md`.
