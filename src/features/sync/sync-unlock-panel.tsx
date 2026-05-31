@@ -5,11 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createBrowserSupabaseClientOrNull } from "@/supabase/client";
-import {
-  clearCachedUserDataKey,
-  loadCachedUserDataKey,
-  saveCachedUserDataKey,
-} from "@/sync/encryption/key-cache";
+import { clearCachedUserDataKey } from "@/sync/encryption/key-cache";
 import { unlockUserDataKey } from "@/sync/encryption/key-backup";
 import { decryptEncryptedRecords } from "@/sync/records/encrypted-records";
 import { buildInvestorDataSnapshot } from "@/sync/records/investor-snapshot";
@@ -44,6 +40,33 @@ type SessionStatus =
   | "authenticated";
 
 type UnlockStatus = "idle" | "unlocking" | "ready" | "error";
+type UnlockStep =
+  | "key-backup"
+  | "user-device"
+  | "pending-sync"
+  | "fetch-records"
+  | "decrypt-records"
+  | "build-snapshot";
+
+const UNLOCK_STEP_LABELS: Record<UnlockStep, string> = {
+  "key-backup": "Pobieram backup klucza z Supabase…",
+  "user-device": "Rejestruję tę przeglądarkę jako urządzenie sync…",
+  "pending-sync": "Wysyłam oczekujące zmiany sync…",
+  "fetch-records": "Pobieram zaszyfrowane rekordy z Supabase…",
+  "decrypt-records": "Odszyfrowuję rekordy lokalnie w przeglądarce…",
+  "build-snapshot": "Buduję lokalny snapshot portfela…",
+};
+
+function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 20_000) {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      window.setTimeout(() => {
+        reject(new Error(`${label} przekroczyło limit ${timeoutMs / 1000}s.`));
+      }, timeoutMs);
+    }),
+  ]);
+}
 
 function getUnlockErrorMessage(error: unknown) {
   if (error instanceof DOMException) {
@@ -82,11 +105,11 @@ export function SyncUnlockPanel({
 }) {
   const supabase = useMemo(() => createBrowserSupabaseClientOrNull(), []);
   const setCredentials = useSyncStore((s) => s.setCredentials);
-  const records = useSyncStore((s) => s.records);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("checking");
   const [session, setSession] = useState<Session | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [unlockStatus, setUnlockStatus] = useState<UnlockStatus>("idle");
+  const [unlockStep, setUnlockStep] = useState<UnlockStep | null>(null);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [lastSummary, setLastSummary] = useState<SyncRecordSummary | null>(null);
 
@@ -133,64 +156,44 @@ export function SyncUnlockPanel({
     },
   });
 
-  const loadSyncWithKey = useCallback(async (userDataKey: CryptoKey, cacheUserId?: string) => {
+  const loadSyncWithKey = useCallback(async (userDataKey: CryptoKey) => {
     if (!supabase) {
       throw new Error("Supabase client is not configured.");
     }
 
     if (session?.user.id) {
-      await registerWebDevice(supabase, session.user.id);
+      setUnlockStep("user-device");
+      await withTimeout(
+        registerWebDevice(supabase, session.user.id),
+        "Rejestracja urządzenia sync",
+      );
     }
-    await flushPendingSyncOperations(supabase);
-    const encryptedRecords = await fetchActiveEncryptedRecords(supabase);
+
+    setUnlockStep("pending-sync");
+    await withTimeout(
+      flushPendingSyncOperations(supabase),
+      "Wysyłanie oczekujących zmian sync",
+    );
+
+    setUnlockStep("fetch-records");
+    const encryptedRecords = await withTimeout(
+      fetchActiveEncryptedRecords(supabase),
+      "Pobieranie rekordów sync",
+    );
+
+    setUnlockStep("decrypt-records");
     const decryptedRecords = await decryptEncryptedRecords(userDataKey, encryptedRecords);
+
+    setUnlockStep("build-snapshot");
     const summary = summarizeDecryptedRecords(decryptedRecords);
     const snapshot = buildInvestorDataSnapshot(decryptedRecords);
 
     setCredentials(userDataKey, supabase);
     setLastSummary(summary);
     onSyncLoaded({ records: decryptedRecords, summary, snapshot });
-    if (cacheUserId) {
-      await saveCachedUserDataKey(cacheUserId, userDataKey);
-    }
+    setUnlockStep(null);
     setUnlockStatus("ready");
   }, [onSyncLoaded, session?.user.id, setCredentials, supabase]);
-
-  useEffect(() => {
-    if (!supabase || !session || records || unlockStatus !== "idle") {
-      return;
-    }
-
-    const userId = session.user.id;
-    let cancelled = false;
-
-    async function loadCachedSync() {
-      setUnlockStatus("unlocking");
-      setUnlockError(null);
-
-      try {
-        const cachedKey = await loadCachedUserDataKey(userId);
-        if (!cachedKey || cancelled) {
-          if (!cancelled) setUnlockStatus("idle");
-          return;
-        }
-
-        await loadSyncWithKey(cachedKey);
-      } catch (error) {
-        await clearCachedUserDataKey(userId);
-        if (!cancelled) {
-          setUnlockStatus("idle");
-          setUnlockError(getRecordDecryptErrorMessage(error));
-        }
-      }
-    }
-
-    void loadCachedSync();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loadSyncWithKey, records, session, supabase, unlockStatus]);
 
   async function unlockSync() {
     if (unlockStatus === "unlocking" || passphrase.length === 0) {
@@ -199,45 +202,56 @@ export function SyncUnlockPanel({
 
     if (!supabase) {
       setUnlockStatus("error");
+      setUnlockStep(null);
       setUnlockError("Supabase client is not configured.");
       return;
     }
 
-    const keyBackup = await refreshEncryptedKeyBackup(supabase);
+    setUnlockStatus("unlocking");
+    setUnlockStep("key-backup");
+    setUnlockError(null);
 
-    if (!keyBackup) {
+    let keyBackup: Awaited<ReturnType<typeof refreshEncryptedKeyBackup>>;
+    try {
+      keyBackup = await withTimeout(
+        refreshEncryptedKeyBackup(supabase),
+        "Pobieranie backupu klucza",
+      );
+    } catch (error) {
       setUnlockStatus("error");
-      setUnlockError("Nie znaleziono backupu klucza dla tego konta.");
+      setUnlockStep(null);
+      setUnlockError(getUnlockErrorMessage(error));
       return;
     }
 
-    setUnlockStatus("unlocking");
-    setUnlockError(null);
+    if (!keyBackup) {
+      setUnlockStatus("error");
+      setUnlockStep(null);
+      setUnlockError("Nie znaleziono backupu klucza dla tego konta.");
+      return;
+    }
 
     let userDataKey: CryptoKey;
     try {
       userDataKey = await unlockUserDataKey(keyBackup, passphrase);
     } catch (error) {
       setUnlockStatus("error");
+      setUnlockStep(null);
       setUnlockError(getUnlockErrorMessage(error));
       return;
     }
 
     try {
-      await loadSyncWithKey(userDataKey, session?.user.id);
+      await loadSyncWithKey(userDataKey);
       setPassphrase("");
     } catch (error) {
       setUnlockStatus("error");
+      setUnlockStep(null);
       setUnlockError(getRecordDecryptErrorMessage(error));
     }
   }
 
   function handleUnlock(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void unlockSync();
-  }
-
-  function handleUnlockPointer(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     void unlockSync();
   }
@@ -402,7 +416,6 @@ export function SyncUnlockPanel({
       {hasBackup && unlockStatus !== "ready" && (
         <form
           onSubmit={handleUnlock}
-          onSubmitCapture={handleUnlock}
           style={{
             display: "grid",
             gap: 10,
@@ -445,9 +458,7 @@ export function SyncUnlockPanel({
             />
           </div>
           <button
-            type="button"
-            onMouseDown={handleUnlockPointer}
-            onClick={() => void unlockSync()}
+            type="submit"
             disabled={isBusy || passphrase.length === 0}
             style={{
               padding: "9px 16px",
@@ -473,6 +484,12 @@ export function SyncUnlockPanel({
             {isBusy ? "Odszyfrowuję…" : "Odblokuj"}
           </button>
         </form>
+      )}
+
+      {unlockStatus === "unlocking" && unlockStep && (
+        <div style={{ fontSize: 12, color: MUTED, marginTop: 10 }}>
+          {UNLOCK_STEP_LABELS[unlockStep]}
+        </div>
       )}
 
       {unlockStatus === "error" && (

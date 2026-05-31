@@ -41,6 +41,7 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus>("idle");
 
   const isLoading = status === "loading" || oauthStatus !== "idle";
@@ -48,18 +49,24 @@ export function LoginForm() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("loading");
+    setErrorMessage(null);
 
     const supabase = createBrowserSupabaseClientOrNull();
 
     if (!supabase) {
       setStatus("error");
+      setErrorMessage("Brak konfiguracji Supabase w .env.local.");
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
 
     if (error) {
       setStatus("error");
+      setErrorMessage(error.message);
       return;
     }
 
@@ -199,7 +206,7 @@ export function LoginForm() {
 
         {status === "error" && (
           <div style={{ fontSize: 12, color: COLORS.loss }}>
-            Nie udało się zalogować. Sprawdź dane i konfigurację Supabase.
+            {errorMessage ?? "Nie udało się zalogować. Sprawdź dane i konfigurację Supabase."}
           </div>
         )}
 
