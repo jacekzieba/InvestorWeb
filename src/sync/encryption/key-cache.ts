@@ -8,12 +8,18 @@ type CachedUserDataKey = {
   updatedAt: string;
 };
 
+function canUseKeyCache() {
+  return typeof window !== "undefined" && Boolean(window.indexedDB);
+}
+
 function openKeyCache() {
   return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = () => {
-      request.result.createObjectStore(STORE_NAME, { keyPath: "userId" });
+      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
+        request.result.createObjectStore(STORE_NAME, { keyPath: "userId" });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -39,7 +45,7 @@ async function withStore<TValue>(
 }
 
 export async function loadCachedUserDataKey(userId: string) {
-  if (!("indexedDB" in window)) {
+  if (!canUseKeyCache()) {
     return null;
   }
 
@@ -52,7 +58,7 @@ export async function loadCachedUserDataKey(userId: string) {
 }
 
 export async function saveCachedUserDataKey(userId: string, key: CryptoKey) {
-  if (!("indexedDB" in window)) {
+  if (!canUseKeyCache()) {
     return;
   }
 
@@ -66,7 +72,7 @@ export async function saveCachedUserDataKey(userId: string, key: CryptoKey) {
 }
 
 export async function clearCachedUserDataKey(userId: string) {
-  if (!("indexedDB" in window)) {
+  if (!canUseKeyCache()) {
     return;
   }
 

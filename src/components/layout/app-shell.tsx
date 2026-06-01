@@ -15,6 +15,7 @@ import {
   type SyncLoadResult,
 } from "@/features/sync/sync-unlock-panel";
 import { COLORS, SHADOWS, SURFACES, TYPOGRAPHY } from "@/lib/design-tokens";
+import { clearCachedUserDataKey } from "@/sync/encryption/key-cache";
 
 declare global {
   interface Window {
@@ -83,7 +84,18 @@ const NAV_GROUPS: NavGroup[] = [
 
 async function handleLogout() {
   const supabase = createBrowserSupabaseClientOrNull();
-  if (supabase) await supabase.auth.signOut();
+  if (supabase) {
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (data.user?.id) {
+        await clearCachedUserDataKey(data.user.id);
+      }
+    } catch {
+      // Sign out even if the local trusted-device cache is unavailable.
+    }
+
+    await supabase.auth.signOut();
+  }
   window.location.assign("/login");
 }
 

@@ -188,6 +188,7 @@ type ParsedDataset = {
   income: IncomePayload[];
   settings: SettingsPayload[];
   fxRates: FxRateInput[];
+  useMarketQuotes: boolean;
   useLatestTransactionFxRate: boolean;
 };
 
@@ -195,6 +196,7 @@ export type SnapshotBuildOptions = {
   fxRates?: FxRateInput[];
   asOf?: Date;
   historyGranularity?: "monthly" | "daily";
+  useMarketQuotes?: boolean;
   useLatestTransactionFxRate?: boolean;
 };
 
@@ -254,6 +256,7 @@ function parseDataset(
     income: [],
     settings: [],
     fxRates: options.fxRates ?? [],
+    useMarketQuotes: options.useMarketQuotes ?? false,
     useLatestTransactionFxRate: options.useLatestTransactionFxRate ?? false,
   };
 
@@ -687,6 +690,7 @@ function valueCash(
     | "marketQuotes"
     | "transactions"
     | "fxRates"
+    | "useMarketQuotes"
     | "useLatestTransactionFxRate"
   >,
   asOf: Date,
@@ -705,6 +709,7 @@ function toPositionValuationDataset(
     | "marketQuotes"
     | "transactions"
     | "fxRates"
+    | "useMarketQuotes"
     | "useLatestTransactionFxRate"
   >,
 ): PositionValuationDataset {
@@ -715,12 +720,14 @@ function toPositionValuationDataset(
       currency: valuation.currency,
       date: toDate(valuation.date),
     })),
-    marketQuotes: dataset.marketQuotes.map((quote) => ({
-      instrumentID: quote.instrumentID,
-      price: quote.price,
-      currency: quote.currency,
-      date: toDate(quote.date),
-    })),
+    marketQuotes: dataset.useMarketQuotes
+      ? dataset.marketQuotes.map((quote) => ({
+          instrumentID: quote.instrumentID,
+          price: quote.price,
+          currency: quote.currency,
+          date: toDate(quote.date),
+        }))
+      : [],
     transactions: dataset.transactions.map((transaction) => ({
       instrumentID: transaction.instrumentID,
       price: transaction.price,

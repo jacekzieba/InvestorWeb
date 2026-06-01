@@ -5,7 +5,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createBrowserSupabaseClientOrNull } from "@/supabase/client";
-import { clearCachedUserDataKey } from "@/sync/encryption/key-cache";
+import {
+  clearCachedUserDataKey,
+  loadCachedUserDataKey,
+  saveCachedUserDataKey,
+} from "@/sync/encryption/key-cache";
 import {
   unlockUserDataKey,
   type EncryptedKeyBackup,
@@ -54,6 +58,14 @@ type SessionStatus =
   | "authenticated";
 
 type UnlockStatus = "idle" | "unlocking" | "ready" | "error";
+type TrustedKeyStatus =
+  | "idle"
+  | "checking"
+  | "missing"
+  | "available"
+  | "saved"
+  | "cleared"
+  | "error";
 type UnlockStep =
   | "key-backup"
   | "user-device"
@@ -106,6 +118,10 @@ function getRecordDecryptErrorMessage(error: unknown) {
   return getUnlockErrorMessage(error);
 }
 
+function isCryptoOperationError(error: unknown) {
+  return error instanceof DOMException && error.name === "OperationError";
+}
+
 type SyncBootstrapResponse = {
   keyBackup: EncryptedKeyBackup | null;
   encryptedRecords: EncryptedRecord[];
@@ -154,13 +170,22 @@ export function SyncUnlockPanel({
   const [unlockStatus, setUnlockStatus] = useState<UnlockStatus>("idle");
   const [unlockStep, setUnlockStep] = useState<UnlockStep | null>(null);
   const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [trustedKeyStatus, setTrustedKeyStatus] =
+    useState<TrustedKeyStatus>("idle");
+  const [trustedKeyMessage, setTrustedKeyMessage] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [lastSummary, setLastSummary] = useState<SyncRecordSummary | null>(null);
   const onSyncLoadedRef = useRef(onSyncLoaded);
+  const unlockStatusRef = useRef(unlockStatus);
+  const attemptedTrustedKeyUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     onSyncLoadedRef.current = onSyncLoaded;
   }, [onSyncLoaded]);
+
+  useEffect(() => {
+    unlockStatusRef.current = unlockStatus;
+  }, [unlockStatus]);
 
   useEffect(() => {
     if (!supabase) {
@@ -213,6 +238,9 @@ export function SyncUnlockPanel({
       (_event, nextSession) => {
         finishSessionCheck(nextSession, null);
         setLastSummary(null);
+        setTrustedKeyStatus("idle");
+        setTrustedKeyMessage(null);
+        attemptedTrustedKeyUserRef.current = null;
         onSyncLoadedRef.current(null);
       }
     );
@@ -226,6 +254,12 @@ export function SyncUnlockPanel({
 
   const userId = session?.user.id ?? initialUser?.id ?? null;
   const userLabel = session?.user.email ?? initialUser?.email ?? userId;
+
+  useEffect(() => {
+    attemptedTrustedKeyUserRef.current = null;
+    setTrustedKeyStatus("idle");
+    setTrustedKeyMessage(null);
+  }, [userId]);
 
   const keyBackupQuery = useQuery({
     queryKey: ["encrypted-key-backup", userId],
@@ -251,6 +285,7 @@ export function SyncUnlockPanel({
   const loadSyncWithKey = useCallback(async (
     userDataKey: CryptoKey,
     bootstrapEncryptedRecords: EncryptedRecord[] | null,
+    options: { rememberTrustedKey?: boolean } = {},
   ) => {
     if (!supabase) {
       throw new Error("Supabase client is not configured.");
@@ -296,12 +331,120 @@ export function SyncUnlockPanel({
     window.__investorWebExportParitySnapshot = () =>
       JSON.stringify(window.__investorWebParitySnapshot, null, 2);
 
+    if (options.rememberTrustedKey && userId) {
+      try {
+        await saveCachedUserDataKey(userId, userDataKey);
+        setTrustedKeyStatus("saved");
+        setTrustedKeyMessage(
+          "Klucz zapisany lokalnie dla tej przeglądarki. Wylogowanie usunie go z urządzenia.",
+        );
+      } catch (error) {
+        setTrustedKeyStatus("error");
+        setTrustedKeyMessage(
+          `Nie udało się zapisać klucza lokalnie: ${getUnlockErrorMessage(error)}`,
+        );
+      }
+    }
+
     setCredentials(userDataKey, supabase);
     setLastSummary(summary);
     onSyncLoaded({ records: decryptedRecords, summary, snapshot });
     setUnlockStep(null);
     setUnlockStatus("ready");
   }, [onSyncLoaded, setCredentials, supabase, userId]);
+
+  useEffect(() => {
+    if (
+      !supabase ||
+      !userId ||
+      sessionStatus !== "authenticated" ||
+      unlockStatusRef.current !== "idle" ||
+      keyBackupQuery.isLoading ||
+      keyBackupQuery.isError ||
+      !keyBackupQuery.data?.keyBackup ||
+      attemptedTrustedKeyUserRef.current === userId
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const trustedUserId = userId;
+    attemptedTrustedKeyUserRef.current = trustedUserId;
+
+    async function unlockWithTrustedBrowserKey() {
+      setTrustedKeyStatus("checking");
+      setTrustedKeyMessage("Sprawdzam zapamiętany klucz tej przeglądarki…");
+
+      let cachedKey: CryptoKey | null = null;
+      try {
+        cachedKey = await loadCachedUserDataKey(trustedUserId);
+      } catch (error) {
+        if (cancelled) return;
+        setTrustedKeyStatus("error");
+        setTrustedKeyMessage(
+          `Nie udało się odczytać lokalnego klucza: ${getUnlockErrorMessage(error)}`,
+        );
+        return;
+      }
+
+      if (cancelled) return;
+
+      if (!cachedKey) {
+        setTrustedKeyStatus("missing");
+        setTrustedKeyMessage(null);
+        return;
+      }
+
+      setUnlockStatus("unlocking");
+      setUnlockStep("decrypt-records");
+      setUnlockError(null);
+
+      try {
+        await loadSyncWithKey(
+          cachedKey,
+          initialUser ? keyBackupQuery.data?.encryptedRecords ?? null : null,
+        );
+        if (cancelled) return;
+        setTrustedKeyStatus("available");
+        setTrustedKeyMessage("Dane odblokowane lokalnym kluczem tej przeglądarki.");
+      } catch (error) {
+        if (cancelled) return;
+        setUnlockStatus("error");
+        setUnlockStep(null);
+
+        if (isCryptoOperationError(error)) {
+          await clearCachedUserDataKey(trustedUserId).catch(() => undefined);
+          setTrustedKeyStatus("cleared");
+          setTrustedKeyMessage(
+            "Zapamiętany klucz nie pasował do danych i został usunięty z tej przeglądarki.",
+          );
+          setUnlockError(
+            "Wpisz passphrase, żeby odświeżyć zaufane urządzenie.",
+          );
+          return;
+        }
+
+        setTrustedKeyStatus("error");
+        setTrustedKeyMessage("Nie udało się użyć zapamiętanego klucza.");
+        setUnlockError(getRecordDecryptErrorMessage(error));
+      }
+    }
+
+    void unlockWithTrustedBrowserKey();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    initialUser,
+    keyBackupQuery.data,
+    keyBackupQuery.isError,
+    keyBackupQuery.isLoading,
+    loadSyncWithKey,
+    sessionStatus,
+    supabase,
+    userId,
+  ]);
 
   async function unlockSync() {
     if (unlockStatus === "unlocking" || passphrase.length === 0) {
@@ -355,6 +498,7 @@ export function SyncUnlockPanel({
       await loadSyncWithKey(
         userDataKey,
         initialUser ? keyBackupQuery.data?.encryptedRecords ?? null : null,
+        { rememberTrustedKey: true },
       );
       setPassphrase("");
     } catch (error) {
@@ -373,6 +517,8 @@ export function SyncUnlockPanel({
     if (!supabase) return;
     if (userId) {
       await clearCachedUserDataKey(userId);
+      setTrustedKeyStatus("cleared");
+      setTrustedKeyMessage("Lokalny klucz tej przeglądarki został usunięty.");
     }
     await supabase.auth.signOut();
     window.location.assign("/login");
@@ -507,7 +653,7 @@ export function SyncUnlockPanel({
             </div>
           ) : (
             <div style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>
-              Klucz danych pozostaje tylko w pamięci tej karty.
+              Po pierwszym odblokowaniu klucz zostanie zapisany lokalnie dla tej przeglądarki.
             </div>
           )}
         </div>
@@ -536,6 +682,13 @@ export function SyncUnlockPanel({
         </div>
       )}
 
+      {trustedKeyStatus === "checking" && (
+        <div style={{ fontSize: 12, color: MUTED, display: "flex", alignItems: "center", gap: 8 }}>
+          <SpinnerDot />
+          {trustedKeyMessage}
+        </div>
+      )}
+
       {keyBackupQuery.isError && (
         <div style={{ fontSize: 12, color: LOSS, marginTop: 4 }}>
           Nie udało się pobrać backupu klucza:{" "}
@@ -548,6 +701,21 @@ export function SyncUnlockPanel({
       {!keyBackupQuery.isLoading && !hasBackup && (
         <div style={{ fontSize: 12, color: AMBER, marginTop: 4 }}>
           Konto nie ma jeszcze backupu klucza w <code>encrypted_key_backups</code>.
+        </div>
+      )}
+
+      {trustedKeyMessage && trustedKeyStatus !== "checking" && (
+        <div
+          style={{
+            fontSize: 12,
+            color:
+              trustedKeyStatus === "error" || trustedKeyStatus === "cleared"
+                ? AMBER
+                : PROFIT,
+            marginTop: 4,
+          }}
+        >
+          {trustedKeyMessage}
         </div>
       )}
 

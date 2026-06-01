@@ -84,20 +84,20 @@ Exact compare after date/history/fx fixes: PARTIAL PASS, record counts, object l
 Remaining valuation differences: Obligacje total 19262.01 native vs 19262.16 web; IKE total 28594.90 native vs 28284.91 web; total value 47856.91 native vs 47547.08 web; latest history value 47857.48 native vs 47547.49 web; monthly change 0.0571 native vs 0.0019 web
 Root cause: Web values VWRL.NL and ICOM.UK from last transaction price because market price cache is not synced; macOS native values from local market cache/latest price. Obligacje residual difference is rounding/day-level bond dirty-price drift of 0.15 PLN.
 Fixed during validation: Web parity now uses daily valuation series (1462 points) and current as-of date like macOS; comparator normalizes Warsaw calendar dates
-Decision: sync/share market price cache with Web via encrypted marketQuote records
-Next validation action: run updated macOS sync/repair so native uploads marketQuote records, then re-unlock Web and repeat exact parity compare
+Decision update: encrypted marketQuote records remain synced, but default Web dashboard/parity now ignores them until native macOS can persist/replay the same market cache after restart. This restores deterministic parity with native exports while preserving the record type for a future durable market-cache pass.
+Next validation action: re-unlock Web after reload and repeat exact parity compare against the native container snapshot.
 ```
 
 ## Market quote sync
 
 ```text
-Decision: option 1 selected, sync minimal current market quote snapshot instead of excluding market-data from parity.
+Decision: option 1 was implemented, but default valuation was stabilized to exclude marketQuote unless a caller explicitly opts in with useMarketQuotes.
 Supabase schema: PASS, encrypted_records record_type constraint now allows marketQuote in live Investor project and migration 0002_allow_market_quote_records.sql was added.
 Native writer: PASS code, macOS SyncService accepts extra local records and AppStore uploads livePrices as marketQuote records during normal sync and repair/reupload.
-Web reader: PASS code, marketQuote payload is accepted, counted in sync summary, and used before manual/transaction prices for non-treasury instrument valuation.
-Verification: npm run typecheck PASS; npm test PASS, 16 files / 64 tests; npm run lint PASS; npm run build PASS; swift test PASS, 234 tests.
+Web reader: PASS code, marketQuote payload is accepted and counted in sync summary; default valuation ignores it for native parity, while opt-in valuation can still use it before manual/transaction prices.
+Verification: npm run typecheck PASS; npm test PASS, 16 files / 65 tests; npm run lint PASS; npm run build PASS; swift test PASS, 234 tests.
 
-Pending live validation: current Supabase data still has no marketQuote rows until updated macOS sync/repair runs.
+Live validation note: Supabase now contains marketQuote rows, but exact parity uses the default no-marketQuote valuation path until macOS has durable market quote persistence.
 ```
 
 ## Web session bootstrap
@@ -171,7 +171,7 @@ Issues: two-authenticated-user isolation not executed; set SUPABASE_RLS_USER_A_E
 
 ```text
 Result: PARTIAL PASS
-Blocking issues: exact native JSON snapshot parity awaits first live marketQuote upload from updated macOS; RLS second-authenticated-user smoke still pending
+Blocking issues: final browser parity smoke after re-unlock is still pending; RLS second-authenticated-user smoke still pending
 Non-blocking issues: Stooq fallback not configured
 Follow-up owner: Codex can continue conflict/tombstone checks; user only needed for native app actions/passphrase entry
 ```

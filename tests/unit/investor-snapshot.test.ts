@@ -216,8 +216,8 @@ describe("InvestorDataSnapshot mapper", () => {
     });
   });
 
-  it("uses synced market quotes for current instrument valuation", () => {
-    const snapshot = buildInvestorDataSnapshot([
+  it("ignores synced market quotes by default for macOS parity", () => {
+    const records = [
       record("account", accountID, {
         recordType: "account",
         id: accountID,
@@ -274,11 +274,22 @@ describe("InvestorDataSnapshot mapper", () => {
         currency: "EUR",
         source: "native-cache",
       }),
-    ]);
+    ];
 
-    expect(snapshot.totalValue).toBe(1_040);
+    const snapshot = buildInvestorDataSnapshot(records);
+    const instruments = buildInstrumentList(records);
 
-    const instruments = buildInstrumentList([
+    expect(snapshot.totalValue).toBe(800);
+    expect(instruments[0]).toMatchObject({
+      lastPrice: 100,
+      valuationSource: "transaction",
+      valuationSourceLabel: "Cena transakcyjna",
+      marketValue: 800,
+    });
+  });
+
+  it("can opt into synced market quotes for current instrument valuation", () => {
+    const records = [
       record("account", accountID, {
         recordType: "account",
         id: accountID,
@@ -295,6 +306,21 @@ describe("InvestorDataSnapshot mapper", () => {
         symbol: "VWRL.NL",
         name: "Vanguard FTSE All-World",
         currency: "EUR",
+      }),
+      record("transaction", "77777777-7777-4777-8777-777777777771", {
+        recordType: "transaction",
+        id: "77777777-7777-4777-8777-777777777771",
+        date: "2026-04-30T00:00:00.000Z",
+        portfolioID: accountID,
+        instrumentID: null,
+        transactionType: "cashDeposit",
+        quantity: null,
+        price: null,
+        grossAmount: 200,
+        currency: "EUR",
+        fees: 0,
+        taxes: 0,
+        fxRateToBase: 4,
       }),
       record("transaction", "33333333-3333-4333-8333-333333333333", {
         recordType: "transaction",
@@ -319,7 +345,12 @@ describe("InvestorDataSnapshot mapper", () => {
         price: 130,
         currency: "EUR",
       }),
-    ]);
+    ];
+
+    const snapshot = buildInvestorDataSnapshot(records, { useMarketQuotes: true });
+    const instruments = buildInstrumentList(records, { useMarketQuotes: true });
+
+    expect(snapshot.totalValue).toBe(1_040);
 
     expect(instruments[0]).toMatchObject({
       lastPrice: 130,
