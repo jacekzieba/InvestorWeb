@@ -77,6 +77,31 @@ export function valueInstrumentPosition(input: {
   const { instrumentID, quantity, asset, lots, dataset, asOf } = input;
 
   if (asset?.kind === "treasuryBond" && asset.bondParams) {
+    const explicitPrice = resolveInstrumentPrice(
+      instrumentID,
+      {
+        assetCurrency: asset.currency,
+        manualValuations: dataset.manualValuations,
+        marketQuotes: dataset.marketQuotes,
+        transactions: [],
+      },
+      asOf,
+    );
+
+    if (explicitPrice.source !== "missing") {
+      return {
+        price: explicitPrice.value,
+        currency: explicitPrice.currency,
+        priceDate: explicitPrice.date,
+        source: explicitPrice.source,
+        sourceLabel: priceSourceLabel(explicitPrice.source),
+        marketValue:
+          quantity *
+          explicitPrice.value *
+          fxRateForCurrency(explicitPrice.currency, dataset, asOf),
+      };
+    }
+
     const marketValue = lots.reduce(
       (sum, lot) =>
         sum +

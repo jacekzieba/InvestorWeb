@@ -67,21 +67,32 @@ const headerAliases: Record<string, string> = {
   portfel: "portfolio",
   price: "price",
   prowizja: "fees",
+  notatka: "note",
+  note: "note",
   quantity: "quantity",
+  qty: "quantity",
   symbol: "instrument",
   tax: "taxes",
   taxes: "taxes",
   ticker: "instrument",
+  total: "totalvalue",
+  totalvalue: "totalvalue",
   transactiontype: "transactiontype",
   type: "transactiontype",
   typ: "transactiontype",
   waluta: "currency",
+  wartosc: "value",
+  wartoscaktualna: "totalvalue",
+  wartoscrynkowa: "totalvalue",
+  wycena: "value",
+  value: "value",
 };
 
 export type ImportReferenceData = {
   portfolios: { id: string; name: string }[];
   instruments: { id: string; symbol: string; name: string }[];
   existingTransactionIds: Set<string>;
+  existingManualValuationIds: Set<string>;
 };
 
 export type TransactionImportRow = {
@@ -93,10 +104,28 @@ export type TransactionImportRow = {
 };
 
 export type TransactionImportPreview = {
+  kind: "transaction";
   rows: TransactionImportRow[];
   validRows: TransactionImportRow[];
   errorRows: TransactionImportRow[];
 };
+
+export type ManualValuationImportRow = {
+  rowNumber: number;
+  values: Record<string, string>;
+  payload: WriteRecordPayload | null;
+  errors: string[];
+  warnings: string[];
+};
+
+export type ManualValuationImportPreview = {
+  kind: "manualValuation";
+  rows: ManualValuationImportRow[];
+  validRows: ManualValuationImportRow[];
+  errorRows: ManualValuationImportRow[];
+};
+
+export type CsvImportPreview = TransactionImportPreview | ManualValuationImportPreview;
 
 const transactionPayloadSchema = z.object({
   id: z.string().uuid(),
@@ -119,6 +148,7 @@ export function buildImportReferenceData(
   const portfolios = new Map<string, { id: string; name: string }>();
   const instruments = new Map<string, { id: string; symbol: string; name: string }>();
   const existingTransactionIds = new Set<string>();
+  const existingManualValuationIds = new Set<string>();
 
   for (const record of records ?? []) {
     if (record.deletedAt) continue;
@@ -148,6 +178,10 @@ export function buildImportReferenceData(
     if (record.envelope.type === "transaction") {
       existingTransactionIds.add(record.id);
     }
+
+    if (record.envelope.type === "manualValuation") {
+      existingManualValuationIds.add(record.id);
+    }
   }
 
   return {
@@ -158,7 +192,30 @@ export function buildImportReferenceData(
       a.symbol.localeCompare(b.symbol, "pl"),
     ),
     existingTransactionIds,
+    existingManualValuationIds,
   };
+}
+
+export function parseCsvImport(
+  text: string,
+  references: ImportReferenceData,
+): CsvImportPreview {
+  return parseImportTable(parseCsvTable(text), references);
+}
+
+export function parseImportTable(
+  table: unknown[][],
+  references: ImportReferenceData,
+): CsvImportPreview {
+  const headers = table[0]?.map((header) => normalizeHeader(String(header ?? ""))) ?? [];
+  if (
+    (headers.includes("value") || headers.includes("totalvalue")) &&
+    !headers.includes("transactiontype")
+  ) {
+    return parseManualValuationTable(table, references);
+  }
+
+  return parseTransactionTable(table, references);
 }
 
 export function parseTransactionCsvImport(
@@ -173,7 +230,7 @@ export function parseTransactionTable(
   references: ImportReferenceData,
 ): TransactionImportPreview {
   if (table.length === 0) {
-    return { rows: [], validRows: [], errorRows: [] };
+    return { kind: "transaction", rows: [], validRows: [], errorRows: [] };
   }
 
   const headers = table[0].map((header) => normalizeHeader(String(header ?? "")));
@@ -192,6 +249,38 @@ export function parseTransactionTable(
     .filter((row) => Object.values(row.values).some(Boolean));
 
   return {
+    kind: "transaction",
+    rows,
+    validRows: rows.filter((row) => row.payload && row.errors.length === 0),
+    errorRows: rows.filter((row) => row.errors.length > 0),
+  };
+}
+
+export function parseManualValuationTable(
+  table: unknown[][],
+  references: ImportReferenceData,
+): ManualValuationImportPreview {
+  if (table.length === 0) {
+    return { kind: "manualValuation", rows: [], validRows: [], errorRows: [] };
+  }
+
+  const headers = table[0].map((header) => normalizeHeader(String(header ?? "")));
+  const seenImportedIds = new Set<string>();
+  const rows = table
+    .slice(1)
+    .map((cells, index) =>
+      parseManualValuationRow(
+        cells.map((cell) => String(cell ?? "")),
+        headers,
+        index + 2,
+        references,
+        seenImportedIds,
+      ),
+    )
+    .filter((row) => Object.values(row.values).some(Boolean));
+
+  return {
+    kind: "manualValuation",
     rows,
     validRows: rows.filter((row) => row.payload && row.errors.length === 0),
     errorRows: rows.filter((row) => row.errors.length > 0),
@@ -203,6 +292,18 @@ export function transactionCsvTemplate() {
     "date,portfolio,instrument,transactionType,quantity,price,grossAmount,currency,fees,taxes",
     "2026-05-17,Main Portfolio,AAPL,buy,2,190.50,381,USD,0,0",
     "2026-05-18,Main Portfolio,,cashDeposit,,,1000,PLN,0,0",
+  ].join("\n");
+}
+
+export function valuationCsvTemplate() {
+  return [
+    "date,instrument,quantity,totalValue,currency,note",
+    "2026-06-05,ROS1228,15,1887.15,PLN,PKO stan rachunku",
+    "2026-06-05,ROS0229,100,12390.00,PLN,PKO stan rachunku",
+    "2026-06-05,ROS1129,20,2335.60,PLN,PKO stan rachunku",
+    "2026-06-05,ROD0338,50,5056.00,PLN,PKO stan rachunku",
+    "2026-06-05,ICOM.UK,146.4252,5286.91,PLN,XTB IKE",
+    "2026-06-05,VWRL.NL,38.2636,25578.72,PLN,XTB IKE",
   ].join("\n");
 }
 
@@ -277,6 +378,66 @@ function parseTransactionRow(
           fees,
           taxes,
         })
+      : null;
+
+  return { rowNumber, values, payload, errors, warnings };
+}
+
+function parseManualValuationRow(
+  cells: string[],
+  headers: string[],
+  rowNumber: number,
+  references: ImportReferenceData,
+  seenImportedIds: Set<string>,
+): ManualValuationImportRow {
+  const values = Object.fromEntries(
+    headers.map((header, index) => [header, cells[index]?.trim() ?? ""]),
+  );
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const id = values.id || crypto.randomUUID();
+  const date = parseDateToSwiftSeconds(values.date ?? "");
+  const instrumentID = resolveInstrument(values.instrument ?? "", references);
+  const quantity = parseOptionalNumber(values.quantity ?? "");
+  const unitValue = parseOptionalNumber(values.value ?? "");
+  const totalValue = parseOptionalNumber(values.totalvalue ?? "");
+  const currency = (values.currency ?? "PLN").toUpperCase();
+  const value =
+    unitValue ??
+    (totalValue != null && quantity != null && quantity > 0
+      ? totalValue / quantity
+      : null);
+
+  if (!values.date || date == null) errors.push("Nieprawidłowa data.");
+  if (!values.instrument || !instrumentID) errors.push("Nie znaleziono instrumentu.");
+  if (value == null || value <= 0) {
+    errors.push("Podaj value albo totalValue z dodatnią quantity.");
+  }
+  if (!currency) errors.push("Brak waluty.");
+  if (values.id && references.existingManualValuationIds.has(values.id)) {
+    errors.push("Wycena o tym ID już istnieje.");
+  }
+  if (values.id && seenImportedIds.has(values.id)) {
+    errors.push("Duplikat ID w importowanym pliku.");
+  }
+  if (values.id) {
+    seenImportedIds.add(values.id);
+  }
+  if (unitValue == null && totalValue != null && quantity == null) {
+    errors.push("totalValue wymaga quantity.");
+  }
+
+  const payload =
+    errors.length === 0
+      ? {
+          id,
+          recordType: "manualValuation",
+          instrumentID: instrumentID!,
+          date: date!,
+          value: value!,
+          currency,
+          note: values.note ?? "",
+        }
       : null;
 
   return { rowNumber, values, payload, errors, warnings };

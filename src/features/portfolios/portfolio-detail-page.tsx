@@ -72,7 +72,15 @@ export function PortfolioDetailPage({ params }: { params: Promise<{ id: string }
   const marketFxRates = useSyncStore((s) => s.marketFxRates);
 
   const detail = useMemo(
-    () => (records ? buildPortfolioDetail(records, id, { fxRates: marketFxRates }) : null),
+    () =>
+      records
+        ? buildPortfolioDetail(records, id, {
+            asOf: new Date(),
+            fxRates: marketFxRates,
+            useLatestTransactionFxRate: true,
+            useMarketQuotes: true,
+          })
+        : null,
     [records, id, marketFxRates],
   );
   const [period, setPeriod] = useState<Period>("1Y");

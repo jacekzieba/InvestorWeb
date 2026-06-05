@@ -125,7 +125,15 @@ export function InstrumentsPage() {
   const setSync = useSyncStore((s) => s.setSync);
 
   const allInstruments = useMemo(
-    () => (records ? buildInstrumentList(records, { fxRates: marketFxRates }) : []),
+    () =>
+      records
+        ? buildInstrumentList(records, {
+            asOf: new Date(),
+            fxRates: marketFxRates,
+            useLatestTransactionFxRate: true,
+            useMarketQuotes: true,
+          })
+        : [],
     [marketFxRates, records],
   );
 
@@ -358,7 +366,15 @@ export function InstrumentsPage() {
           currency: quoteCurrencyForInstrument(quote, inst.currency),
         }),
       ];
-      setSync(nextRecords, buildInvestorDataSnapshot(nextRecords, { historyGranularity: "daily" }));
+      setSync(
+        nextRecords,
+        buildInvestorDataSnapshot(nextRecords, {
+          asOf: new Date(),
+          historyGranularity: "daily",
+          useLatestTransactionFxRate: true,
+          useMarketQuotes: true,
+        }),
+      );
       setQuotePreview(null);
       setQuoteMessage("Cena została zapisana lokalnie w fake sync.");
       return;

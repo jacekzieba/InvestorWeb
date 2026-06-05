@@ -63,24 +63,6 @@ export function resolveInstrumentPrice(
   },
   valuationDate: Date,
 ): InstrumentPrice {
-  const marketQuote = latestBeforeOrOn(
-    input.marketQuotes.filter(
-      (quote) =>
-        quote.instrumentID === instrumentID &&
-        quote.price > EPSILON &&
-        quote.date.getTime() <= valuationDate.getTime(),
-    ),
-  );
-
-  if (marketQuote) {
-    return {
-      value: marketQuote.price,
-      currency: marketQuote.currency,
-      date: marketQuote.date,
-      source: "market",
-    };
-  }
-
   const manualValuation = latestBeforeOrOn(
     input.manualValuations.filter(
       (valuation) =>
@@ -96,6 +78,24 @@ export function resolveInstrumentPrice(
       currency: manualValuation.currency,
       date: manualValuation.date,
       source: "manual",
+    };
+  }
+
+  const marketQuote = latestBeforeOrOn(
+    input.marketQuotes.filter(
+      (quote) =>
+        quote.instrumentID === instrumentID &&
+        quote.price > EPSILON &&
+        quote.date.getTime() <= valuationDate.getTime(),
+    ),
+  );
+
+  if (marketQuote) {
+    return {
+      value: marketQuote.price,
+      currency: marketQuote.currency,
+      date: marketQuote.date,
+      source: "market",
     };
   }
 

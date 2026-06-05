@@ -222,7 +222,11 @@ export function AddTransactionModal({
   // / deposit-close, where you can only act on something you actually hold).
   const heldInstrumentIds = useMemo(() => {
     if (!records || !portfolioId) return new Set<string>();
-    const detail = buildPortfolioDetail(records, portfolioId);
+    const detail = buildPortfolioDetail(records, portfolioId, {
+      asOf: new Date(),
+      useLatestTransactionFxRate: true,
+      useMarketQuotes: true,
+    });
     return new Set((detail?.holdings ?? []).filter((h) => h.quantity > 0).map((h) => h.instrumentId));
   }, [records, portfolioId]);
 

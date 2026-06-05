@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { RecordType } from "@/domain/models/investor-data";
 import type { DecryptedRecord } from "@/sync/records/encrypted-records";
 import {
+  buildIncomeLists,
   buildInstrumentList,
   buildInvestorDataSnapshot,
   buildPortfolioDetail,
   buildTransactionList,
 } from "@/sync/records/investor-snapshot";
+import { findDuplicateEarning } from "@/domain/models/earnings";
 
 const accountID = "11111111-1111-4111-8111-111111111111";
 const instrumentID = "22222222-2222-4222-8222-222222222222";
@@ -361,6 +363,323 @@ describe("InvestorDataSnapshot mapper", () => {
     });
   });
 
+  it("uses synced market quotes for live portfolio values when enabled", () => {
+    const secondAccountID = "99999999-9999-4999-8999-999999999990";
+    const records = [
+      record("account", accountID, {
+        recordType: "account",
+        id: accountID,
+        name: "IKE",
+        baseCurrency: "PLN",
+      }),
+      record("account", secondAccountID, {
+        recordType: "account",
+        id: secondAccountID,
+        name: "Obligacje",
+        baseCurrency: "PLN",
+      }),
+      record("asset", instrumentID, {
+        recordType: "asset",
+        id: instrumentID,
+        kind: "etf",
+        symbol: "ETF",
+        name: "ETF",
+        currency: "PLN",
+      }),
+      record("transaction", "22222222-2222-4222-8222-222222222222", {
+        recordType: "transaction",
+        id: "22222222-2222-4222-8222-222222222222",
+        date: "2026-04-30T00:00:00.000Z",
+        portfolioID: accountID,
+        instrumentID: null,
+        transactionType: "cashDeposit",
+        grossAmount: 1_000,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("transaction", "33333333-3333-4333-8333-333333333333", {
+        recordType: "transaction",
+        id: "33333333-3333-4333-8333-333333333333",
+        date: "2026-05-01T00:00:00.000Z",
+        portfolioID: accountID,
+        instrumentID,
+        transactionType: "buy",
+        quantity: 10,
+        price: 100,
+        grossAmount: 1_000,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("transaction", "44444444-4444-4444-8444-444444444444", {
+        recordType: "transaction",
+        id: "44444444-4444-4444-8444-444444444444",
+        date: "2026-05-01T00:00:00.000Z",
+        portfolioID: secondAccountID,
+        instrumentID: null,
+        transactionType: "cashDeposit",
+        grossAmount: 500,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("marketQuote", "66666666-6666-4666-8666-666666666666", {
+        recordType: "marketQuote",
+        id: "66666666-6666-4666-8666-666666666666",
+        instrumentID,
+        date: "2026-05-15T00:00:00.000Z",
+        price: 125,
+        currency: "PLN",
+      }),
+    ];
+
+    const snapshot = buildInvestorDataSnapshot(records, { useMarketQuotes: true });
+
+    expect(snapshot.totalValue).toBe(1_750);
+    expect(snapshot.portfolios).toEqual([
+      expect.objectContaining({ name: "IKE", value: 1_250 }),
+      expect.objectContaining({ name: "Obligacje", value: 500 }),
+    ]);
+  });
+
+  it("reconciles XTB IKE ETF holdings from synced live quotes and cash", () => {
+    const commodityID = "99999999-9999-4999-8999-999999999981";
+    const allWorldID = "99999999-9999-4999-8999-999999999982";
+    const records = [
+      record("account", accountID, {
+        recordType: "account",
+        id: accountID,
+        name: "Moje IKE",
+        baseCurrency: "PLN",
+      }),
+      record("asset", commodityID, {
+        recordType: "asset",
+        id: commodityID,
+        kind: "etf",
+        symbol: "ICOM.UK",
+        name: "iShares Diversified Commodity Swap",
+        currency: "USD",
+      }),
+      record("asset", allWorldID, {
+        recordType: "asset",
+        id: allWorldID,
+        kind: "etf",
+        symbol: "VWRL.NL",
+        name: "Vanguard FTSE All-World",
+        currency: "EUR",
+      }),
+      record("transaction", "99999999-9999-4999-8999-999999999983", {
+        recordType: "transaction",
+        id: "99999999-9999-4999-8999-999999999983",
+        date: "2026-06-05T09:59:00.000Z",
+        portfolioID: accountID,
+        instrumentID: null,
+        transactionType: "cashDeposit",
+        grossAmount: 2.17,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("transaction", "99999999-9999-4999-8999-999999999984", {
+        recordType: "transaction",
+        id: "99999999-9999-4999-8999-999999999984",
+        date: "2026-06-05T09:59:00.000Z",
+        portfolioID: accountID,
+        instrumentID: commodityID,
+        transactionType: "accountTransferIn",
+        quantity: 146.4252,
+        price: 8.6595,
+        grossAmount: 0,
+        currency: "USD",
+        fees: 0,
+        taxes: 0,
+        transferKind: "asset",
+      }),
+      record("transaction", "99999999-9999-4999-8999-999999999985", {
+        recordType: "transaction",
+        id: "99999999-9999-4999-8999-999999999985",
+        date: "2026-06-05T09:59:00.000Z",
+        portfolioID: accountID,
+        instrumentID: allWorldID,
+        transactionType: "accountTransferIn",
+        quantity: 38.2636,
+        price: 131.11,
+        grossAmount: 0,
+        currency: "EUR",
+        fees: 0,
+        taxes: 0,
+        transferKind: "asset",
+      }),
+      record("marketQuote", "99999999-9999-4999-8999-999999999986", {
+        recordType: "marketQuote",
+        id: "99999999-9999-4999-8999-999999999986",
+        instrumentID: commodityID,
+        date: "2026-06-05T09:59:00.000Z",
+        price: 8.6595,
+        currency: "USD",
+      }),
+      record("marketQuote", "99999999-9999-4999-8999-999999999987", {
+        recordType: "marketQuote",
+        id: "99999999-9999-4999-8999-999999999987",
+        instrumentID: allWorldID,
+        date: "2026-06-05T09:59:00.000Z",
+        price: 131.11,
+        currency: "EUR",
+      }),
+    ];
+
+    const options = {
+      useMarketQuotes: true,
+      asOf: new Date("2026-06-05T09:59:00.000Z"),
+      fxRates: [
+        {
+          currency: "USD",
+          rate: 5286.91 / (146.4252 * 8.6595),
+          date: new Date("2026-06-05T00:00:00.000Z"),
+        },
+        {
+          currency: "EUR",
+          rate: 25578.72 / (38.2636 * 131.11),
+          date: new Date("2026-06-05T00:00:00.000Z"),
+        },
+      ],
+    };
+
+    const snapshot = buildInvestorDataSnapshot(records, options);
+    const detail = buildPortfolioDetail(records, accountID, options);
+
+    expect(snapshot.totalValue).toBeCloseTo(30_867.8, 2);
+    expect(snapshot.cash).toBeCloseTo(2.17, 2);
+    expect(snapshot.portfolios[0]?.value).toBeCloseTo(30_867.8, 2);
+    expect(detail?.holdings).toEqual([
+      expect.objectContaining({
+        symbol: "VWRL.NL",
+        quantity: 38.2636,
+        lastPrice: 131.11,
+        marketValue: expect.closeTo(25_578.72, 2),
+        valuationSource: "market",
+      }),
+      expect.objectContaining({
+        symbol: "ICOM.UK",
+        quantity: 146.4252,
+        lastPrice: 8.6595,
+        marketValue: expect.closeTo(5_286.91, 2),
+        valuationSource: "market",
+      }),
+    ]);
+  });
+
+  it("keeps same-day cash deposits out of per-portfolio daily change", () => {
+    const records = [
+      record("account", accountID, {
+        recordType: "account",
+        id: accountID,
+        name: "Core",
+        baseCurrency: "PLN",
+      }),
+      record("transaction", "33333333-3333-4333-8333-333333333333", {
+        recordType: "transaction",
+        id: "33333333-3333-4333-8333-333333333333",
+        date: "2026-05-14T10:00:00.000Z",
+        portfolioID: accountID,
+        transactionType: "cashDeposit",
+        grossAmount: 1_000,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("transaction", "44444444-4444-4444-8444-444444444444", {
+        recordType: "transaction",
+        id: "44444444-4444-4444-8444-444444444444",
+        date: "2026-05-15T10:00:00.000Z",
+        portfolioID: accountID,
+        transactionType: "cashDeposit",
+        grossAmount: 500,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+    ];
+
+    const snapshot = buildInvestorDataSnapshot(records);
+
+    expect(snapshot.portfolios[0]?.value).toBe(1_500);
+    expect(snapshot.portfolios[0]?.dailyChange).toBe(0);
+  });
+
+  it("computes total return and max drawdown from performance, not raw deposits", () => {
+    const records = [
+      record("account", accountID, {
+        recordType: "account",
+        id: accountID,
+        name: "Core",
+        baseCurrency: "PLN",
+      }),
+      record("asset", instrumentID, {
+        recordType: "asset",
+        id: instrumentID,
+        kind: "etf",
+        symbol: "ETF",
+        name: "ETF",
+        currency: "PLN",
+      }),
+      record("transaction", "33333333-3333-4333-8333-333333333333", {
+        recordType: "transaction",
+        id: "33333333-3333-4333-8333-333333333333",
+        date: "2026-05-01T10:00:00.000Z",
+        portfolioID: accountID,
+        transactionType: "cashDeposit",
+        grossAmount: 1_000,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("transaction", "44444444-4444-4444-8444-444444444444", {
+        recordType: "transaction",
+        id: "44444444-4444-4444-8444-444444444444",
+        date: "2026-05-01T10:00:00.000Z",
+        portfolioID: accountID,
+        instrumentID,
+        transactionType: "buy",
+        quantity: 10,
+        price: 100,
+        grossAmount: 1_000,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("manualValuation", "55555555-5555-4555-8555-555555555555", {
+        recordType: "manualValuation",
+        id: "55555555-5555-4555-8555-555555555555",
+        instrumentID,
+        date: "2026-05-02T10:00:00.000Z",
+        value: 90,
+        currency: "PLN",
+      }),
+      record("transaction", "66666666-6666-4666-8666-666666666666", {
+        recordType: "transaction",
+        id: "66666666-6666-4666-8666-666666666666",
+        date: "2026-05-03T10:00:00.000Z",
+        portfolioID: accountID,
+        transactionType: "cashDeposit",
+        grossAmount: 9_000,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+    ];
+
+    const snapshot = buildInvestorDataSnapshot(records, {
+      asOf: new Date("2026-05-04T10:00:00.000Z"),
+      historyGranularity: "daily",
+    });
+
+    expect(snapshot.totalValue).toBe(9_900);
+    expect(snapshot.metrics.totalReturnPct).toBeCloseTo(-10, 5);
+    expect(snapshot.metrics.maxDrawdownPct).toBeCloseTo(-10, 5);
+  });
+
   it("summarizes macOS income records without mixing them into portfolio cash", () => {
     const snapshot = buildInvestorDataSnapshot([
       record("account", accountID, {
@@ -434,6 +753,124 @@ describe("InvestorDataSnapshot mapper", () => {
       burdensPLN: 1200,
       netPLN: 3800,
     });
+  });
+
+  it("builds macOS-compatible income lists, monthly summaries and duplicate keys", () => {
+    const activeRecords = [
+      record("income", "66666666-6666-4666-8666-666666666666", {
+        recordType: "income",
+        id: "66666666-6666-4666-8666-666666666666",
+        entryKind: "earning",
+        year: 2026,
+        month: 5,
+        employmentType: "business",
+        enteredAmount: 10_000,
+        currency: "EUR",
+        fxRateToPLN: 4.4,
+        plnAmount: 44_000,
+        source: "Invoice",
+        burdenCategory: null,
+        amountPLN: null,
+        note: "B2B",
+      }),
+      record("income", "77777777-7777-4777-8777-777777777777", {
+        recordType: "income",
+        id: "77777777-7777-4777-8777-777777777777",
+        entryKind: "earning",
+        year: 2026,
+        month: 5,
+        employmentType: "employment",
+        enteredAmount: 5_000,
+        currency: "PLN",
+        fxRateToPLN: 1,
+        plnAmount: 5_000,
+        source: "Salary",
+        burdenCategory: null,
+        amountPLN: null,
+        note: null,
+      }),
+      record("income", "88888888-8888-4888-8888-888888888888", {
+        recordType: "income",
+        id: "88888888-8888-4888-8888-888888888888",
+        entryKind: "burden",
+        year: 2026,
+        month: 5,
+        employmentType: null,
+        enteredAmount: null,
+        currency: null,
+        fxRateToPLN: null,
+        plnAmount: null,
+        source: null,
+        burdenCategory: "zus",
+        amountPLN: 1_700,
+        note: "monthly",
+      }),
+      record("income", "99999999-9999-4999-8999-999999999999", {
+        recordType: "income",
+        id: "99999999-9999-4999-8999-999999999999",
+        entryKind: "earning",
+        year: 2025,
+        month: 12,
+        employmentType: "employment",
+        enteredAmount: 6_000,
+        currency: "PLN",
+        fxRateToPLN: 1,
+        plnAmount: 6_000,
+        source: "Salary",
+      }),
+    ];
+    const deleted = {
+      ...record("income", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", {
+        recordType: "income",
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        entryKind: "burden",
+        year: 2026,
+        month: 5,
+        burdenCategory: "vat",
+        amountPLN: 999,
+      }),
+      deletedAt: "2026-05-02T00:00:00.000Z",
+    };
+
+    const lists = buildIncomeLists([...activeRecords, deleted]);
+
+    expect(lists.earnings).toHaveLength(3);
+    expect(lists.burdens).toHaveLength(1);
+    expect(lists.rows.map((row) => `${row.kind}:${row.id}`)).toEqual([
+      "earning:66666666-6666-4666-8666-666666666666",
+      "earning:77777777-7777-4777-8777-777777777777",
+      "burden:88888888-8888-4888-8888-888888888888",
+      "earning:99999999-9999-4999-8999-999999999999",
+    ]);
+    expect(lists.summaries[0]).toMatchObject({
+      year: 2026,
+      month: 5,
+      employmentPLN: 5_000,
+      businessRevenuePLN: 44_000,
+      burdenPLN: 1_700,
+      sourcePLN: 49_000,
+      totalPLN: 47_300,
+      earningsCount: 2,
+    });
+    expect(lists.yearlyAverages[0]).toMatchObject({
+      year: 2026,
+      avgResult: 47_300,
+      avgSource: 49_000,
+      totalResult: 47_300,
+      months: 1,
+    });
+    expect(lists.totals.totalPLN).toBe(53_300);
+    expect(lists.years).toEqual([2026, 2025]);
+    expect(lists.currencies).toEqual(["EUR", "PLN"]);
+    expect(
+      findDuplicateEarning(lists.earnings, {
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        year: 2026,
+        month: 5,
+        source: "Invoice",
+        employmentType: "business",
+      })?.id,
+    ).toBe("66666666-6666-4666-8666-666666666666");
   });
 
   it("supports Swift JSONEncoder numeric dates", () => {
@@ -538,6 +975,93 @@ describe("InvestorDataSnapshot mapper", () => {
     expect(instruments[0]).toMatchObject({
       valuationSource: "treasuryBond",
       valuationSourceLabel: "Obligacja skarbowa",
+    });
+  });
+
+  it("uses broker/manual treasury bond values before synthetic dirty price", () => {
+    const bondID = "12121212-1212-4212-8212-121212121212";
+    const records = [
+      record("account", accountID, {
+        recordType: "account",
+        id: accountID,
+        name: "Obligacje",
+        baseCurrency: "PLN",
+      }),
+      record("asset", bondID, {
+        recordType: "asset",
+        id: bondID,
+        kind: "treasuryBond",
+        symbol: "ROD0338",
+        name: "ROD0338",
+        currency: "PLN",
+        bondParams: {
+          series: "ROD",
+          fullCode: "ROD0338",
+          issueDate: "2026-03-01T00:00:00.000Z",
+          maturityDate: "2038-03-01T00:00:00.000Z",
+          nominalValue: 100,
+          firstPeriodRate: 6,
+          subsequentBase: "inflacja",
+          marginOverBase: 1.5,
+          capitalization: "roczna",
+          interestPayment: "przy wykupie",
+        },
+      }),
+      record("transaction", "34343434-3434-4434-8434-343434343434", {
+        recordType: "transaction",
+        id: "34343434-3434-4434-8434-343434343434",
+        date: "2026-04-01T10:00:00.000Z",
+        portfolioID: accountID,
+        instrumentID: null,
+        transactionType: "cashDeposit",
+        quantity: null,
+        price: null,
+        grossAmount: 6_000,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("transaction", "45454545-4545-4454-8454-454545454545", {
+        recordType: "transaction",
+        id: "45454545-4545-4454-8454-454545454545",
+        date: "2026-04-01T10:00:00.000Z",
+        portfolioID: accountID,
+        instrumentID: bondID,
+        transactionType: "buy",
+        quantity: 50,
+        price: 100,
+        grossAmount: 5_000,
+        currency: "PLN",
+        fees: 0,
+        taxes: 0,
+      }),
+      record("manualValuation", "56565656-5656-4656-8656-565656565656", {
+        recordType: "manualValuation",
+        id: "56565656-5656-4656-8656-565656565656",
+        instrumentID: bondID,
+        date: "2026-06-05T00:00:00.000Z",
+        value: 101.12,
+        currency: "PLN",
+      }),
+    ];
+
+    const instruments = buildInstrumentList(records);
+    const detail = buildPortfolioDetail(records, accountID);
+
+    expect(instruments[0]).toMatchObject({
+      id: bondID,
+      totalQuantity: 50,
+      lastPrice: 101.12,
+      marketValue: 5_056,
+      valuationSource: "manual",
+      valuationSourceLabel: "Wycena ręczna",
+    });
+    expect(detail?.holdings[0]).toMatchObject({
+      instrumentId: bondID,
+      quantity: 50,
+      lastPrice: 101.12,
+      marketValue: 5_056,
+      valuationSource: "manual",
     });
   });
 

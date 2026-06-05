@@ -320,11 +320,17 @@ export function SyncUnlockPanel({
 
     setUnlockStep("build-snapshot");
     const summary = summarizeDecryptedRecords(decryptedRecords);
-    const snapshot = buildInvestorDataSnapshot(decryptedRecords);
+    const snapshot = buildInvestorDataSnapshot(decryptedRecords, {
+      asOf: new Date(),
+      historyGranularity: "daily",
+      useLatestTransactionFxRate: true,
+      useMarketQuotes: true,
+    });
     const paritySnapshot = buildParitySnapshot(decryptedRecords, {
       asOf: new Date(),
       historyGranularity: "daily",
       useLatestTransactionFxRate: true,
+      useMarketQuotes: true,
     });
 
     window.__investorWebParitySnapshot = paritySnapshot;
@@ -619,6 +625,17 @@ export function SyncUnlockPanel({
   // ── State: authenticated ──────────────────────────────────────
   const hasBackup = Boolean(keyBackupQuery.data?.keyBackup);
   const isBusy = unlockStatus === "unlocking";
+  const isPreparingTrustedKey =
+    hasBackup &&
+    unlockStatus === "idle" &&
+    trustedKeyStatus === "idle" &&
+    attemptedTrustedKeyUserRef.current !== userId;
+  const showPassphraseForm =
+    hasBackup &&
+    unlockStatus !== "ready" &&
+    !keyBackupQuery.isLoading &&
+    trustedKeyStatus !== "checking" &&
+    !isPreparingTrustedKey;
 
   return (
     <div style={{ padding: "20px 22px" }}>
@@ -689,6 +706,13 @@ export function SyncUnlockPanel({
         </div>
       )}
 
+      {isPreparingTrustedKey && (
+        <div style={{ fontSize: 12, color: MUTED, display: "flex", alignItems: "center", gap: 8 }}>
+          <SpinnerDot />
+          Sprawdzam lokalny klucz tej przeglądarki…
+        </div>
+      )}
+
       {keyBackupQuery.isError && (
         <div style={{ fontSize: 12, color: LOSS, marginTop: 4 }}>
           Nie udało się pobrać backupu klucza:{" "}
@@ -720,7 +744,7 @@ export function SyncUnlockPanel({
       )}
 
       {/* Passphrase form */}
-      {hasBackup && unlockStatus !== "ready" && (
+      {showPassphraseForm && (
         <form
           onSubmit={handleUnlock}
           style={{

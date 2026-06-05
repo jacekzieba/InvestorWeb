@@ -161,10 +161,13 @@ function isNavItemActive(item: NavItem, pathname: string) {
 function SidebarContent({ onNav }: { onNav?: () => void }) {
   const pathname = usePathname();
   const snapshot = useSyncStore((s) => s.snapshot);
-  const totalValue = snapshot?.totalValue ?? 49_752;
-  const changePct = snapshot?.monthlyChange ?? 2.54;
-  const changePLN = Math.round((totalValue * changePct) / 100);
-  const changeSign = changePLN >= 0 ? "+" : "";
+  const totalValue = snapshot?.totalValue ?? null;
+  const changePct = snapshot?.monthlyChange ?? null;
+  const changePLN =
+    totalValue != null && changePct != null
+      ? Math.round((totalValue * changePct) / 100)
+      : null;
+  const changeSign = changePLN != null && changePLN >= 0 ? "+" : "";
 
   // Design + native iOS/macOS list each portfolio directly under "Portfele".
   // Build those entries dynamically from the synced snapshot.
@@ -311,10 +314,13 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
             Łączna wartość
           </div>
           <div style={{ fontFamily: TYPOGRAPHY.serif, fontSize: 27, fontWeight: 500, marginTop: 5, position: "relative", fontVariantNumeric: "tabular-nums", letterSpacing: "-.01em" }}>
-            {fmtNavNumber(totalValue)}<span style={{ fontSize: 13, fontStyle: "italic", opacity: 0.6, marginLeft: 5 }}>PLN</span>
+            {totalValue == null ? "—" : fmtNavNumber(totalValue)}
+            <span style={{ fontSize: 13, fontStyle: "italic", opacity: 0.6, marginLeft: 5 }}>PLN</span>
           </div>
           <div style={{ fontSize: 11.5, color: "#7FD9A8", fontWeight: 600, marginTop: 4, fontVariantNumeric: "tabular-nums", position: "relative" }}>
-            {changeSign}{fmtNavNumber(changePLN)} PLN ({changePct >= 0 ? "+" : ""}{fmtNavNumber(changePct, 2)}%)
+            {changePLN == null || changePct == null
+              ? "Ładowanie danych"
+              : `${changeSign}${fmtNavNumber(changePLN)} PLN (${changePct >= 0 ? "+" : ""}${fmtNavNumber(changePct, 2)}%)`}
           </div>
           <div style={{ fontSize: 10.5, color: "rgba(244,242,230,0.50)", marginTop: 1, position: "relative" }}>vs 30 dni temu</div>
         </div>
@@ -368,6 +374,7 @@ export function AppShell({
             asOf: new Date(),
             historyGranularity: "daily",
             useLatestTransactionFxRate: true,
+            useMarketQuotes: true,
           })
         : null,
     [records],
@@ -408,7 +415,7 @@ export function AppShell({
   const PAD = 12;
 
   return (
-    <div style={{ minHeight: "100vh", background: V2.page, padding: `${PAD}px ${PAD}px ${PAD + 8}px` }}>
+    <div style={{ minHeight: "100vh", background: V2.page, padding: `${PAD}px ${PAD}px ${PAD + 8}px`, overflowX: "hidden" }}>
 
       {/* ── FLOATING TOPBAR ──────────────────────────────────── */}
       <header

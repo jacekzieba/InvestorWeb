@@ -92,6 +92,7 @@ const REPORTS = [
   { id: "performance", label: "Wyniki" },
   { id: "yearly", label: "Roczne zwroty" },
   { id: "income", label: "Dochód pasywny" },
+  { id: "personalIncome", label: "Zarobki" },
   { id: "allocation", label: "Alokacja" },
 ] as const;
 type ReportId = (typeof REPORTS)[number]["id"];
@@ -121,6 +122,7 @@ export function ReportsPage() {
   const perf = snapshot.performanceSeries.length >= 2 ? snapshot.performanceSeries : snapshot.valuationSeries;
   const metrics = snapshot.metrics;
   const cashflows = snapshot.cashflows;
+  const personalIncome = snapshot.income;
   const monthlyStats = useMemo(() => calcMonthlyStats(perf), [perf]);
   const yearlyReturns = useMemo(() => calcYearlyReturns(perf), [perf]);
 
@@ -241,6 +243,26 @@ export function ReportsPage() {
             })()}
             <div style={{ fontSize: 12.5, color: MUTED, marginTop: 6 }}>
               Dywidendy i odsetki pomniejszone o prowizje i podatki. Wpłaty/wypłaty kapitału nie są wliczane do dochodu.
+            </div>
+          </div>
+        </>
+      )}
+
+      {report === "personalIncome" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
+            <Kpi label="Zarobki" value={`+${fmt(personalIncome.earningsPLN)} PLN`} sub={`${personalIncome.earningCount} rekordów`} color={PROFIT} />
+            <Kpi label="Obciążenia" value={`-${fmt(personalIncome.burdensPLN)} PLN`} sub={`${personalIncome.burdenCount} rekordów`} color={LOSS} />
+            <Kpi label="Netto" value={`${personalIncome.netPLN >= 0 ? "+" : ""}${fmt(personalIncome.netPLN)} PLN`} color={personalIncome.netPLN >= 0 ? PROFIT : LOSS} />
+            <Kpi label="Razem wpisów" value={fmt(personalIncome.earningCount + personalIncome.burdenCount)} sub="income z sync" />
+          </div>
+          <div style={{ ...card, padding: "20px 22px" }}>
+            <SectionHead>Zarobki i obciążenia</SectionHead>
+            <div style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 500, marginTop: 8, color: personalIncome.netPLN >= 0 ? PROFIT : LOSS }}>
+              {personalIncome.netPLN >= 0 ? "+" : ""}{fmt(personalIncome.netPLN)} PLN
+            </div>
+            <div style={{ fontSize: 12.5, color: MUTED, marginTop: 6 }}>
+              Suma rekordów zarobków i obciążeń zsynchronizowanych z macOS. Nie jest mieszana z gotówką portfela.
             </div>
           </div>
         </>

@@ -2,6 +2,7 @@ const LEGACY_STOOQ_SUFFIXES: Record<string, string> = {
   ".US": "",
   ".PL": ".WA",
   ".UK": ".L",
+  ".NL": ".AS",
 };
 
 export function yahooSymbolForInstrument(symbol: string, currency?: string | null) {

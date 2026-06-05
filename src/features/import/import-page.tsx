@@ -3,14 +3,17 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import {
   buildImportReferenceData,
-  parseTransactionCsvImport,
-  parseTransactionTable,
+  parseCsvImport,
+  parseImportTable,
   transactionCsvTemplate,
-  type TransactionImportPreview,
+  valuationCsvTemplate,
+  type CsvImportPreview,
 } from "@/features/import/import-parser";
-import { refreshSyncStore, saveRecord } from "@/sync/records/record-writer";
+import type { RecordType } from "@/domain/models/investor-data";
+import { saveRecord } from "@/sync/records/record-writer";
 import { buildParitySnapshot } from "@/sync/records/parity-snapshot";
-import { buildTransactionList } from "@/sync/records/investor-snapshot";
+import { buildInvestorDataSnapshot, buildTransactionList } from "@/sync/records/investor-snapshot";
+import type { DecryptedRecord } from "@/sync/records/encrypted-records";
 import { useSyncStore } from "@/sync/store/sync-store";
 import { V2, V2Card, V2ScreenHead, V2_TYPE, v2Mix } from "@/lib/v2-design";
 
@@ -77,11 +80,12 @@ export function ImportPage() {
   const userDataKey = useSyncStore((s) => s.userDataKey);
   const supabase = useSyncStore((s) => s.supabase);
   const setSync = useSyncStore((s) => s.setSync);
+  const marketFxRates = useSyncStore((s) => s.marketFxRates);
   const references = useMemo(() => buildImportReferenceData(records), [records]);
 
   const [tab, setTab] = useState<"import" | "export">("import");
   const [fileName, setFileName] = useState<string | null>(null);
-  const [preview, setPreview] = useState<TransactionImportPreview | null>(null);
+  const [preview, setPreview] = useState<CsvImportPreview | null>(null);
   const [saving, setSaving] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const [result, setResult] = useState<string | null>(null);
@@ -98,10 +102,10 @@ export function ImportPage() {
       if (extension === "xlsx" || extension === "xls") {
         const { readSheet } = await import("read-excel-file/browser");
         const rows = await readSheet(file);
-        setPreview(parseTransactionTable(rows, references));
+        setPreview(parseImportTable(rows, references));
       } else {
         const text = await file.text();
-        setPreview(parseTransactionCsvImport(text, references));
+        setPreview(parseCsvImport(text, references));
       }
     } catch (parseError) {
       setError(parseError instanceof Error ? parseError.message : "Nie udało się odczytać pliku.");
@@ -118,18 +122,27 @@ export function ImportPage() {
     setResult(null);
     try {
       if (dryRun) {
-        setResult(`Symulacja: ${preview.validRows.length} transakcji gotowych do zapisu, ${preview.errorRows.length} wymaga poprawy.`);
+        setResult(`Symulacja: ${preview.validRows.length} rekordów gotowych do zapisu, ${preview.errorRows.length} wymaga poprawy.`);
         return;
       }
       let queued = 0;
+      const localPayloads = [];
       for (const row of preview.validRows) {
         if (!row.payload) continue;
-        const saveResult = await saveRecord(supabase, userDataKey, "transaction", row.payload, { baseUpdatedAt: null });
+        const saveResult = await saveRecord(supabase, userDataKey, row.payload.recordType, row.payload, { baseUpdatedAt: null });
         if (saveResult.queued) queued += 1;
+        localPayloads.push(row.payload);
       }
-      const { records: nextRecords, snapshot } = await refreshSyncStore(supabase, userDataKey);
+      const nextRecords = upsertLocalRecords(records ?? [], localPayloads);
+      const snapshot = buildInvestorDataSnapshot(nextRecords, {
+        asOf: new Date(),
+        fxRates: marketFxRates,
+        historyGranularity: "daily",
+        useLatestTransactionFxRate: true,
+        useMarketQuotes: true,
+      });
       setSync(nextRecords, snapshot);
-      setResult(`Zaimportowano ${preview.validRows.length - queued} transakcji${queued > 0 ? `, ${queued} czeka w kolejce sync` : ""}.`);
+      setResult(`Zaimportowano ${preview.validRows.length - queued} rekordów${queued > 0 ? `, ${queued} czeka w kolejce sync` : ""}.`);
       setPreview(null);
       setFileName(null);
     } catch (importError) {
@@ -205,13 +218,16 @@ export function ImportPage() {
           <V2Card>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 14, alignItems: "center" }}>
               <div>
-                <div style={{ fontFamily: SERIF, fontSize: 17, fontWeight: 500, color: V2.ink, marginBottom: 4 }}>Transakcje CSV / XLSX</div>
+                <div style={{ fontFamily: SERIF, fontSize: 17, fontWeight: 500, color: V2.ink, marginBottom: 4 }}>Transakcje lub wyceny CSV / XLSX</div>
                 <div style={{ color: V2.muted, fontSize: 12.5, lineHeight: 1.5 }}>
-                  Wymagane kolumny: date, portfolio, transactionType, grossAmount, currency.
-                  Instrument można podać jako ID, symbol albo nazwę.
+                  Transakcje: date, portfolio, transactionType, grossAmount, currency. Wyceny: date, instrument, value albo quantity + totalValue, currency.
+                  Szablon XTB/PKO to migawka z przykładowymi wartościami - zaktualizuj kwoty, jeśli rachunek brokera już się zmienił.
                 </div>
               </div>
-              <GhostButton onClick={() => downloadBlob(transactionCsvTemplate(), "investor-szablon.csv", "text/csv;charset=utf-8")}>Szablon CSV</GhostButton>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <GhostButton onClick={() => downloadBlob(transactionCsvTemplate(), "investor-transakcje-szablon.csv", "text/csv;charset=utf-8")}>Szablon transakcji</GhostButton>
+                <GhostButton onClick={() => downloadBlob(valuationCsvTemplate(), "investor-wyceny-xtb-pko-2026-06-05.csv", "text/csv;charset=utf-8")}>Wyceny XTB/PKO</GhostButton>
+              </div>
             </div>
           </V2Card>
 
@@ -231,7 +247,7 @@ export function ImportPage() {
             <V2Card pad={0} style={{ overflow: "hidden" }}>
               <div style={{ borderBottom: `0.5px solid ${V2.line}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 20px", flexWrap: "wrap" }}>
                 <div>
-                  <div style={{ fontFamily: SERIF, fontSize: 17, fontWeight: 500, color: V2.ink }}>Podgląd importu</div>
+                  <div style={{ fontFamily: SERIF, fontSize: 17, fontWeight: 500, color: V2.ink }}>Podgląd importu {preview.kind === "manualValuation" ? "wycen" : "transakcji"}</div>
                   <div style={{ color: V2.muted, fontSize: 12, marginTop: 3 }}>
                     <span style={{ color: V2.profit, fontWeight: 600 }}>{validCount} poprawnych</span> · {warningCount} z ostrzeżeniami · <span style={{ color: errorCount ? V2.loss : V2.muted }}>{errorCount} z błędami</span>
                   </div>
@@ -250,7 +266,7 @@ export function ImportPage() {
                 <table style={{ borderCollapse: "collapse", minWidth: 760, width: "100%" }}>
                   <thead>
                     <tr style={{ background: v2Mix(V2.ink, 0.025) }}>
-                      {["Wiersz", "Data", "Typ", "Portfel", "Instrument", "Kwota", "Status"].map((heading) => (
+                      {["Wiersz", "Data", "Typ", "Portfel", "Instrument", "Kwota / wycena", "Status"].map((heading) => (
                         <th key={heading} style={{ color: V2.subtle, fontSize: 10, fontWeight: 700, letterSpacing: ".07em", padding: "10px 12px", textAlign: "left", textTransform: "uppercase" }}>{heading}</th>
                       ))}
                     </tr>
@@ -260,10 +276,10 @@ export function ImportPage() {
                       <tr key={row.rowNumber} style={{ borderTop: `0.5px solid ${V2.line2}` }}>
                         <td style={cellStyle}>{row.rowNumber}</td>
                         <td style={cellStyle}>{row.values.date || "-"}</td>
-                        <td style={cellStyle}>{row.values.transactiontype || "-"}</td>
+                        <td style={cellStyle}>{row.values.transactiontype || (preview.kind === "manualValuation" ? "manualValuation" : "-")}</td>
                         <td style={cellStyle}>{row.values.portfolio || "-"}</td>
                         <td style={cellStyle}>{row.values.instrument || "-"}</td>
-                        <td style={cellStyle}>{row.values.grossamount || "-"} {row.values.currency}</td>
+                        <td style={cellStyle}>{row.values.grossamount || row.values.totalvalue || row.values.value || "-"} {row.values.currency}</td>
                         <td style={{ ...cellStyle, minWidth: 240 }}>
                           {row.errors.length > 0 ? (
                             <span style={{ color: V2.loss }}>{row.errors.join(" ")}</span>
@@ -326,6 +342,31 @@ export function ImportPage() {
       {error && <div style={{ color: V2.loss, fontSize: 13, fontWeight: 600 }}>{error}</div>}
     </div>
   );
+}
+
+function upsertLocalRecords(
+  records: DecryptedRecord[],
+  payloads: Array<{ id: string; recordType: string; [key: string]: unknown }>,
+): DecryptedRecord[] {
+  const now = new Date().toISOString();
+  const next = new Map(records.map((record) => [record.id, record]));
+
+  for (const payload of payloads) {
+    next.set(payload.id, {
+      id: payload.id,
+      deviceId: "web-import",
+      updatedAt: now,
+      deletedAt: null,
+      envelope: {
+        type: payload.recordType as RecordType,
+        payloadVersion: 1,
+        schemaVersion: 1,
+        payload,
+      },
+    });
+  }
+
+  return [...next.values()];
 }
 
 const cellStyle: CSSProperties = {

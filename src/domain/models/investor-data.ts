@@ -40,7 +40,7 @@ export type IncomeSummary = {
 export type PortfolioMetrics = {
   /** Net external capital contributed (deposits − withdrawals), base currency. */
   netInvested: number;
-  /** Simple total return on net invested capital, percent. */
+  /** Time-weighted total return, percent, neutral to deposits/withdrawals. */
   totalReturnPct: number;
   /** Inflation-adjusted total return, percent. */
   realReturnPct: number;

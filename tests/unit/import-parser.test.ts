@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseCsvImport,
   parseTransactionCsvImport,
   parseTransactionTable,
   type ImportReferenceData,
@@ -17,6 +18,7 @@ const references: ImportReferenceData = {
     },
   ],
   existingTransactionIds: new Set(["33333333-3333-4333-8333-333333333333"]),
+  existingManualValuationIds: new Set(),
 };
 
 describe("parseTransactionCsvImport", () => {
@@ -86,5 +88,39 @@ describe("parseTransactionCsvImport", () => {
     expect(preview.validRows).toHaveLength(1);
     expect(preview.errorRows).toHaveLength(1);
     expect(preview.errorRows[0].errors).toContain("Duplikat ID w importowanym pliku.");
+  });
+});
+
+describe("parseCsvImport manual valuations", () => {
+  it("parses statement totals into unit manual valuations", () => {
+    const valuationReferences: ImportReferenceData = {
+      ...references,
+      instruments: [
+        ...references.instruments,
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          symbol: "ROS0229",
+          name: "ROS0229",
+        },
+      ],
+    };
+
+    const preview = parseCsvImport(
+      [
+        "date,instrument,quantity,totalValue,currency,note",
+        "2026-06-05,ROS0229,100,12390.00,PLN,PKO stan rachunku",
+      ].join("\n"),
+      valuationReferences,
+    );
+
+    expect(preview.kind).toBe("manualValuation");
+    expect(preview.errorRows).toHaveLength(0);
+    expect(preview.validRows[0].payload).toMatchObject({
+      recordType: "manualValuation",
+      instrumentID: "44444444-4444-4444-8444-444444444444",
+      value: 123.9,
+      currency: "PLN",
+      note: "PKO stan rachunku",
+    });
   });
 });

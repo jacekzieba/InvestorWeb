@@ -15,6 +15,7 @@ describe("yahooSymbolForInstrument", () => {
     expect(yahooSymbolForInstrument("cdr.pl", "PLN")).toBe("CDR.WA");
     expect(yahooSymbolForInstrument("vod", "GBP")).toBe("VOD.L");
     expect(yahooSymbolForInstrument("vod.uk", "GBP")).toBe("VOD.L");
+    expect(yahooSymbolForInstrument("vwrl.nl", "EUR")).toBe("VWRL.AS");
   });
 
   it("preserves explicit Yahoo symbols", () => {

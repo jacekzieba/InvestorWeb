@@ -364,6 +364,11 @@ export async function refreshSyncStore(
   const encryptedRecords = await fetchActiveEncryptedRecords(supabase);
   const decryptedRecords = await decryptEncryptedRecords(userDataKey, encryptedRecords);
   const summary = summarizeDecryptedRecords(decryptedRecords);
-  const snapshot = buildInvestorDataSnapshot(decryptedRecords, { historyGranularity: "daily" });
+  const snapshot = buildInvestorDataSnapshot(decryptedRecords, {
+    asOf: new Date(),
+    historyGranularity: "daily",
+    useLatestTransactionFxRate: true,
+    useMarketQuotes: true,
+  });
   return { records: decryptedRecords, summary, snapshot };
 }

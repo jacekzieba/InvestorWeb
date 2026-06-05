@@ -12,6 +12,14 @@ import type {
   TransactionRow,
 } from "@/domain/models/investor-data";
 import {
+  buildIncomeListsFromRows,
+  type EarningBurdenCategory,
+  type EarningBurdenRow,
+  type EarningRow,
+  type EmploymentType,
+  type IncomeLists,
+} from "@/domain/models/earnings";
+import {
   computeMaxDrawdownPct,
   computeRealReturnPct,
   computeTotalReturnPct,
@@ -240,8 +248,14 @@ export function buildInvestorDataSnapshot(
   const monthlyChange = calculateMonthlyChange(valuationSeries);
   const income = buildIncomeSummary(dataset.income);
   const cashflows = buildCashflowSummary(accounts, dataset, asOf);
-  const metrics = buildMetrics(accounts, dataset, asOf, totalValue, valuationSeries);
   const performanceSeries = buildPerformanceSeries(accounts, dataset, valuationSeries);
+  const metrics = buildMetrics(
+    accounts,
+    dataset,
+    asOf,
+    totalValue,
+    performanceSeries,
+  );
 
   return {
     asOf: asOf.toISOString(),
@@ -375,7 +389,7 @@ function buildMetrics(
   dataset: ParsedDataset,
   asOf: Date,
   totalValue: number,
-  valuationSeries: InvestorDataSnapshot["valuationSeries"],
+  performanceSeries: InvestorDataSnapshot["performanceSeries"],
 ): PortfolioMetrics {
   const accountIds = new Set(accounts.map((account) => account.id));
   const cashflows: CashflowPoint[] = [];
@@ -396,10 +410,10 @@ function buildMetrics(
 
   const xirr = computeXirr(cashflows);
   const inflationPct = getInflationPct(dataset);
-  const totalReturnPct = computeTotalReturnPct(totalValue, netInvested);
+  const totalReturnPct = computePerformanceReturnPct(performanceSeries);
   const realReturnPct = computeRealReturnPct(totalReturnPct, inflationPct);
   const maxDrawdownPct = computeMaxDrawdownPct(
-    valuationSeries.map((point) => point.value),
+    performanceSeries.map((point) => point.value),
   );
 
   return {
@@ -410,6 +424,15 @@ function buildMetrics(
     maxDrawdownPct,
     inflationPct,
   };
+}
+
+function computePerformanceReturnPct(
+  performanceSeries: InvestorDataSnapshot["performanceSeries"],
+) {
+  const first = performanceSeries[0];
+  const last = performanceSeries.at(-1);
+  if (!first || !last || first.value <= EPSILON) return 0;
+  return computeTotalReturnPct(last.value, first.value);
 }
 
 function getInflationPct(dataset: ParsedDataset): number {
@@ -583,9 +606,10 @@ function buildPortfolioSummary(
     dataset,
     previousDay,
   ).totalValue;
+  const periodFlow = portfolioFlowIntoBaseAmount(transactions, previousDay, asOf);
   const dailyChange =
     previousValue > EPSILON
-      ? ((valuation.totalValue - previousValue) / previousValue) * 100
+      ? ((valuation.totalValue - periodFlow - previousValue) / previousValue) * 100
       : 0;
 
   const sparkline = buildValuationSeries([account], dataset, asOf, {
@@ -603,6 +627,36 @@ function buildPortfolioSummary(
     positions: valuation.positionCount,
     sparkline,
   };
+}
+
+function portfolioFlowIntoBaseAmount(
+  transactions: TransactionPayload[],
+  after: Date,
+  beforeOrOn: Date,
+) {
+  let flow = 0;
+
+  for (const transaction of transactions) {
+    const date = toDate(transaction.date);
+    if (date.getTime() <= after.getTime() || date.getTime() > beforeOrOn.getTime()) {
+      continue;
+    }
+
+    switch (transaction.transactionType) {
+      case "cashDeposit":
+      case "transferIn":
+      case "accountTransferIn":
+        flow += transactionBaseAmount(transaction);
+        break;
+      case "cashWithdrawal":
+      case "transferOut":
+      case "accountTransferOut":
+        flow -= transactionBaseAmount(transaction);
+        break;
+    }
+  }
+
+  return flow;
 }
 
 function transactionsForPortfolio(
@@ -1273,6 +1327,79 @@ export function buildTransactionList(records: DecryptedRecord[]): TransactionRow
       } satisfies TransactionRow;
     })
     .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+const employmentTypes = new Set<EmploymentType>(["employment", "business"]);
+const burdenCategories = new Set<EarningBurdenCategory>([
+  "incomeTax",
+  "vat",
+  "zus",
+  "accounting",
+]);
+
+function isEmploymentType(value: string | null | undefined): value is EmploymentType {
+  return typeof value === "string" && employmentTypes.has(value as EmploymentType);
+}
+
+function isBurdenCategory(value: string | null | undefined): value is EarningBurdenCategory {
+  return typeof value === "string" && burdenCategories.has(value as EarningBurdenCategory);
+}
+
+export function buildIncomeLists(records: DecryptedRecord[]): IncomeLists {
+  const dataset = parseDataset(records);
+  const updatedAtByIncomeId = new Map(
+    records
+      .filter((record) => !record.deletedAt && record.envelope.type === "income")
+      .map((record) => [record.id, record.updatedAt] as const),
+  );
+  const earnings: EarningRow[] = [];
+  const burdens: EarningBurdenRow[] = [];
+
+  for (const item of dataset.income) {
+    if (item.entryKind === "earning") {
+      if (
+        !isEmploymentType(item.employmentType) ||
+        typeof item.enteredAmount !== "number" ||
+        typeof item.currency !== "string" ||
+        typeof item.fxRateToPLN !== "number" ||
+        typeof item.plnAmount !== "number"
+      ) {
+        continue;
+      }
+
+      earnings.push({
+        id: item.id,
+        kind: "earning",
+        year: item.year,
+        month: item.month,
+        employmentType: item.employmentType,
+        enteredAmount: item.enteredAmount,
+        currency: item.currency,
+        fxRateToPLN: item.fxRateToPLN,
+        plnAmount: item.plnAmount,
+        source: item.source?.trim() || "Wynagrodzenie",
+        note: item.note?.trim() || null,
+        sourceUpdatedAt: updatedAtByIncomeId.get(item.id) ?? null,
+      });
+    } else {
+      if (!isBurdenCategory(item.burdenCategory) || typeof item.amountPLN !== "number") {
+        continue;
+      }
+
+      burdens.push({
+        id: item.id,
+        kind: "burden",
+        year: item.year,
+        month: item.month,
+        category: item.burdenCategory,
+        amountPLN: item.amountPLN,
+        note: item.note?.trim() || null,
+        sourceUpdatedAt: updatedAtByIncomeId.get(item.id) ?? null,
+      });
+    }
+  }
+
+  return buildIncomeListsFromRows(earnings, burdens);
 }
 
 export function buildInstrumentList(

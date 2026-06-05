@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../fixtures/macos-refactor/sync-fixture.json";
-import { buildInvestorDataSnapshot, buildInstrumentList, buildPortfolioDetail, buildTransactionList } from "@/sync/records/investor-snapshot";
+import {
+  buildIncomeLists,
+  buildInvestorDataSnapshot,
+  buildInstrumentList,
+  buildPortfolioDetail,
+  buildTransactionList,
+} from "@/sync/records/investor-snapshot";
 import { buildParitySnapshot } from "@/sync/records/parity-snapshot";
 import { base64ToBytes } from "@/sync/encryption/base64";
 import { decryptEncryptedRecords } from "@/sync/records/encrypted-records";
@@ -29,6 +35,7 @@ describe("macOS refactor sync fixtures", () => {
     const snapshot = buildInvestorDataSnapshot(records);
     const transactions = buildTransactionList(records);
     const instruments = buildInstrumentList(records);
+    const incomeLists = buildIncomeLists(records);
     const portfolio = buildPortfolioDetail(records, native.portfolios[0].id);
     const paritySnapshot = buildParitySnapshot(records);
 
@@ -51,6 +58,34 @@ describe("macOS refactor sync fixtures", () => {
       burdensPLN: 2_400,
       netPLN: 9_600,
     });
+    expect(incomeLists.earnings).toEqual([
+      {
+        ...native.earnings[0],
+        kind: "earning",
+        sourceUpdatedAt: "2025-05-21T00:11:00.000Z",
+      },
+    ]);
+    expect(incomeLists.burdens).toEqual([
+      {
+        ...native.earningBurdens[0],
+        kind: "burden",
+        sourceUpdatedAt: "2025-05-21T00:12:00.000Z",
+      },
+    ]);
+    expect(incomeLists.summaries).toEqual([
+      {
+        id: "2025-5",
+        year: 2025,
+        month: 5,
+        periodStart: "2025-05-01T00:00:00.000Z",
+        employmentPLN: 12_000,
+        businessRevenuePLN: 0,
+        burdenPLN: 2_400,
+        sourcePLN: 12_000,
+        totalPLN: 9_600,
+        earningsCount: 1,
+      },
+    ]);
     expect(snapshot.totalValue).toBeGreaterThan(0);
     expect(snapshot.cash).toBeGreaterThan(0);
     expect(instruments.some((instrument) => instrument.symbol === "AAPL")).toBe(

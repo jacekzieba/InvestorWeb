@@ -4,7 +4,6 @@ import { useQueries } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import type { FxRateInput } from "@/domain/valuation/price-resolver";
 import type { FxRate } from "@/market-data/types";
-import { buildInvestorDataSnapshot } from "@/sync/records/investor-snapshot";
 import { useSyncStore } from "@/sync/store/sync-store";
 import type { DecryptedRecord } from "@/sync/records/encrypted-records";
 
@@ -15,7 +14,6 @@ type FxResponse = {
 export function MarketFxBootstrap() {
   const records = useSyncStore((state) => state.records);
   const snapshot = useSyncStore((state) => state.snapshot);
-  const setSync = useSyncStore((state) => state.setSync);
   const setMarketFxRates = useSyncStore((state) => state.setMarketFxRates);
   const appliedKey = useRef<string | null>(null);
 
@@ -73,8 +71,7 @@ export function MarketFxBootstrap() {
 
     appliedKey.current = key;
     setMarketFxRates(rates);
-    setSync(records, buildInvestorDataSnapshot(records, { fxRates: rates, historyGranularity: "daily" }));
-  }, [currencies.length, queries, records, setMarketFxRates, setSync]);
+  }, [currencies.length, queries, records, setMarketFxRates]);
 
   return null;
 }

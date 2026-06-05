@@ -20,7 +20,12 @@ export function FakeSyncBootstrap() {
 
     async function seedFakeSync() {
       const records = buildFakeSyncRecords();
-      const snapshot = buildInvestorDataSnapshot(records, { historyGranularity: "daily" });
+      const snapshot = buildInvestorDataSnapshot(records, {
+        asOf: new Date(),
+        historyGranularity: "daily",
+        useLatestTransactionFxRate: true,
+        useMarketQuotes: true,
+      });
       const userDataKey = await fakeUserDataKeyPromise;
 
       if (cancelled) {

@@ -210,6 +210,57 @@ describe("record writer", () => {
     expect(getPendingSyncOperations()).toHaveLength(0);
   });
 
+  it("writes and soft-deletes income records through the generic encrypted writer", async () => {
+    const { client, store } = createSupabaseStore({
+      metadata: null,
+    });
+
+    const saveResult = await saveRecord(client, await testKey(), "income", {
+      id: recordId,
+      recordType: "income",
+      entryKind: "earning",
+      year: 2026,
+      month: 5,
+      employmentType: "employment",
+      enteredAmount: 12_000,
+      currency: "PLN",
+      fxRateToPLN: 1,
+      plnAmount: 12_000,
+      source: "Salary",
+      burdenCategory: null,
+      amountPLN: null,
+      note: null,
+    });
+
+    expect(saveResult.queued).toBe(false);
+    expect(store.upserts).toHaveLength(1);
+    expect(store.upserts[0]).toMatchObject([
+      {
+        id: recordId,
+        record_type: "income",
+        deleted_at: null,
+      },
+    ]);
+
+    store.metadata = {
+      id: recordId,
+      record_type: "income",
+      updated_at: "2026-05-17T10:00:00.000Z",
+      deleted_at: null,
+    };
+
+    const deleteResult = await deleteRecord(client, "income", recordId, {
+      baseUpdatedAt: "2026-05-17T10:00:00.000Z",
+    });
+
+    expect(deleteResult.queued).toBe(false);
+    expect(store.updates).toHaveLength(1);
+    expect(store.updates[0]).toMatchObject({
+      deleted_at: expect.any(String),
+      updated_at: expect.any(String),
+    });
+  });
+
   it("rejects stale soft-deletes as conflicts", async () => {
     const { client, store } = createSupabaseStore({
       metadata: {

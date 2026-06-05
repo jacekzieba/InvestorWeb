@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearMarketDataCache } from "@/market-data/cache";
-import { fetchNbpFxRate } from "@/market-data/providers/nbp";
+import {
+  fetchNbpFxRate,
+  fetchNbpMonthlyAverageFxRate,
+} from "@/market-data/providers/nbp";
 import { fetchStooqQuote } from "@/market-data/providers/stooq";
 import { fetchYahooQuote } from "@/market-data/providers/yahoo";
 import { GET as getFxRate } from "../../app/api/market-data/fx/route";
@@ -10,6 +13,7 @@ import { GET as getMarketDataStatus } from "../../app/api/market-data/status/rou
 
 vi.mock("@/market-data/providers/nbp", () => ({
   fetchNbpFxRate: vi.fn(),
+  fetchNbpMonthlyAverageFxRate: vi.fn(),
 }));
 
 vi.mock("@/market-data/providers/yahoo", () => ({
@@ -21,6 +25,7 @@ vi.mock("@/market-data/providers/stooq", () => ({
 }));
 
 const mockedFetchNbpFxRate = vi.mocked(fetchNbpFxRate);
+const mockedFetchNbpMonthlyAverageFxRate = vi.mocked(fetchNbpMonthlyAverageFxRate);
 const mockedFetchYahooQuote = vi.mocked(fetchYahooQuote);
 const mockedFetchStooqQuote = vi.mocked(fetchStooqQuote);
 
@@ -196,6 +201,41 @@ describe("GET /api/market-data/fx", () => {
 
     await expect(response.json()).resolves.toEqual({ error: "Invalid date format." });
     expect(response.status).toBe(400);
+    expect(mockedFetchNbpFxRate).not.toHaveBeenCalled();
+  });
+
+  it("fetches and caches an NBP monthly average FX rate", async () => {
+    mockedFetchNbpMonthlyAverageFxRate.mockResolvedValue({
+      provider: "nbp",
+      base: "EUR",
+      quote: "PLN",
+      rate: 4.31,
+      effectiveDate: "2026-05",
+      table: "A",
+    });
+
+    const first = await getFxRate(request("http://localhost/api/market-data/fx?code=eur&year=2026&month=5"));
+    const second = await getFxRate(request("http://localhost/api/market-data/fx?code=EUR&year=2026&month=5"));
+
+    await expect(first.json()).resolves.toMatchObject({
+      data: {
+        base: "EUR",
+        effectiveDate: "2026-05",
+        rate: 4.31,
+      },
+      cache: {
+        hit: false,
+      },
+    });
+    await expect(second.json()).resolves.toMatchObject({
+      cache: {
+        hit: true,
+      },
+    });
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(mockedFetchNbpMonthlyAverageFxRate).toHaveBeenCalledTimes(1);
+    expect(mockedFetchNbpMonthlyAverageFxRate).toHaveBeenCalledWith("eur", 2026, 5);
     expect(mockedFetchNbpFxRate).not.toHaveBeenCalled();
   });
 });

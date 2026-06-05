@@ -2,14 +2,23 @@
 
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { InstrumentRow, TransactionRow, ValuationPoint } from "@/domain/models/investor-data";
+import type {
+  AllocationSlice,
+  InstrumentRow,
+  PortfolioSummary,
+  TransactionRow,
+  ValuationPoint,
+} from "@/domain/models/investor-data";
 import { TYPOGRAPHY } from "@/lib/design-tokens";
 import { formatAxisValue } from "@/lib/money";
-import { buildInstrumentList, buildTransactionList } from "@/sync/records/investor-snapshot";
+import {
+  buildInstrumentList,
+  buildInvestorDataSnapshot,
+  buildTransactionList,
+} from "@/sync/records/investor-snapshot";
 import { summarizeDecryptedRecords } from "@/sync/records/sync-summary";
 import { useSyncStore } from "@/sync/store/sync-store";
 import { firstName, useProfile } from "@/features/profile/profile-store";
-import { sampleSnapshot, SAMPLE_HISTORY } from "./sample-data";
 
 const SERIF = TYPOGRAPHY.serif;
 const UI = TYPOGRAPHY.system;
@@ -75,127 +84,6 @@ type TransactionView = {
   currency: string;
 };
 
-const DEMO_HOLDINGS: HoldingView[] = [
-  {
-    id: "vwrl",
-    symbol: "VWRL.NL",
-    name: "Vanguard FTSE All-World UCITS ETF USD",
-    kind: "etf",
-    quantity: 38.2636,
-    price: 154.86,
-    currency: "EUR",
-    valuePLN: 25176.86,
-    pnl: 3861.2,
-    pnlPct: 18.11,
-    d30Pct: 5.52,
-  },
-  {
-    id: "icom",
-    symbol: "ICOM.UK",
-    name: "iShares Diversified Commodity Swap UCITS",
-    kind: "etf",
-    quantity: 146.4252,
-    price: 10.34,
-    currency: "USD",
-    valuePLN: 5532.69,
-    pnl: 901.44,
-    pnlPct: 19.46,
-    d30Pct: 5.53,
-  },
-  {
-    id: "rod0338",
-    symbol: "ROD0338",
-    name: "Obligacje 12-letnie ROD0338",
-    kind: "treasuryBond",
-    quantity: 50,
-    price: 100.34,
-    currency: "PLN",
-    valuePLN: 5016.98,
-    pnl: 16.98,
-    pnlPct: 0.34,
-    d30Pct: 0.21,
-  },
-  {
-    id: "edo0432",
-    symbol: "EDO0432",
-    name: "Obligacje 10-letnie EDO0432",
-    kind: "treasuryBond",
-    quantity: 80,
-    price: 112.8,
-    currency: "PLN",
-    valuePLN: 9024,
-    pnl: 1024,
-    pnlPct: 12.8,
-    d30Pct: 0.18,
-  },
-  {
-    id: "cspx",
-    symbol: "CSPX",
-    name: "iShares Core S&P 500 UCITS ETF",
-    kind: "etf",
-    quantity: 2.1,
-    price: 1842.5,
-    currency: "USD",
-    valuePLN: 5208.75,
-    pnl: 308.5,
-    pnlPct: 6.3,
-    d30Pct: 2.18,
-  },
-];
-
-const DEMO_TRANSACTIONS: TransactionView[] = [
-  {
-    id: "t1",
-    date: "2026-04-15",
-    portfolioName: "Obligacje",
-    type: "interest",
-    symbol: "ROD0338",
-    quantity: null,
-    amount: 184,
-    currency: "PLN",
-  },
-  {
-    id: "t2",
-    date: "2026-04-01",
-    portfolioName: "IKE",
-    type: "buy",
-    symbol: "VWRL.NL",
-    quantity: 0.1688,
-    amount: 24,
-    currency: "EUR",
-  },
-  {
-    id: "t3",
-    date: "2026-04-01",
-    portfolioName: "IKE",
-    type: "dividend",
-    symbol: "VWRL.NL",
-    quantity: null,
-    amount: 32,
-    currency: "PLN",
-  },
-  {
-    id: "t4",
-    date: "2026-03-28",
-    portfolioName: "IKE",
-    type: "buy",
-    symbol: "CSPX",
-    quantity: 0.5,
-    amount: 910,
-    currency: "USD",
-  },
-  {
-    id: "t5",
-    date: "2026-03-15",
-    portfolioName: "IKE",
-    type: "dividend",
-    symbol: "ICOM.UK",
-    quantity: null,
-    amount: 18,
-    currency: "PLN",
-  },
-];
-
 const TX_LABELS: Record<string, string> = {
   buy: "Zakup",
   sell: "Sprzedaż",
@@ -226,6 +114,7 @@ const KIND_LABELS: Record<string, string> = {
 const MONTH_LABELS = ["Gru", "Sty", "Lut", "Mar", "Kwi", "Maj"];
 const MONTHLY_PROFIT = [1180, 760, 1520, 640, 1980, 1634];
 const MONTHLY_LOSS = [180, 540, 120, 690, 240, 210];
+const DASHBOARD_HEAD_PADDING = "22px 2px 0";
 
 function mix(hex: string, pct: number) {
   const h = hex.replace("#", "");
@@ -694,7 +583,7 @@ function filterByPeriod(history: ValuationPoint[], period: Period) {
   return filtered.length >= 2 ? filtered : history.slice(-2);
 }
 
-function normalizeAllocation(snapshotAllocation: typeof sampleSnapshot.allocation) {
+function normalizeAllocation(snapshotAllocation: AllocationSlice[]) {
   if (snapshotAllocation.length === 0) {
     return [{ id: "cash", label: "Gotówka", value: 100, color: PALETTE.cash }];
   }
@@ -708,6 +597,40 @@ function normalizeAllocation(snapshotAllocation: typeof sampleSnapshot.allocatio
   }));
 }
 
+function DashboardLoading({
+  profileName,
+  dateText,
+}: {
+  profileName: string;
+  dateText: string;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: UI, color: PALETTE.ink }}>
+      <div style={{ padding: DASHBOARD_HEAD_PADDING }}>
+        <div style={{ fontFamily: SERIF, fontSize: 31, fontWeight: 500, color: PALETTE.ink, letterSpacing: "-.01em" }}>
+          Dzień dobry, <span style={{ fontStyle: "italic", color: PALETTE.brand }}>{firstName(profileName)}</span>
+        </div>
+        <div style={{ fontFamily: UI, fontSize: 13, color: PALETTE.muted, marginTop: 3 }}>
+          {dateText} · synchronizuję dane.
+        </div>
+      </div>
+
+      <Card glass pad={0} style={{ overflow: "hidden" }}>
+        <div style={{ padding: "30px", minHeight: 260, display: "flex", flexDirection: "column", justifyContent: "center", gap: 16 }}>
+          <Eyebrow>Wartość portfela</Eyebrow>
+          <div style={{ fontFamily: SERIF, fontSize: 48, color: PALETTE.subtle }}>Ładowanie danych</div>
+          <div style={{ width: "min(520px, 100%)", height: 10, borderRadius: 99, background: mix(PALETTE.ink, 0.07), overflow: "hidden" }}>
+            <div style={{ width: "42%", height: "100%", borderRadius: 99, background: mix(PALETTE.brand, 0.25) }} />
+          </div>
+          <div style={{ fontSize: 13, color: PALETTE.muted }}>
+            Czekam na odszyfrowany snapshot. Nie pokazuję danych przykładowych.
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export function DashboardOverview() {
   const storeSnapshot = useSyncStore((state) => state.snapshot);
   const records = useSyncStore((state) => state.records);
@@ -717,12 +640,37 @@ export function DashboardOverview() {
   const isMobile = useMedia("(max-width: 720px)");
   const isTablet = useMedia("(max-width: 1140px)");
 
-  const snapshot = storeSnapshot ?? sampleSnapshot;
+  const snapshot = useMemo(
+    () =>
+      records
+        ? buildInvestorDataSnapshot(records, {
+            asOf: new Date(),
+            fxRates: marketFxRates,
+            historyGranularity: "daily",
+            useLatestTransactionFxRate: true,
+            useMarketQuotes: true,
+          })
+        : storeSnapshot,
+    [marketFxRates, records, storeSnapshot],
+  );
   const syncSummary = records ? summarizeDecryptedRecords(records) : null;
-  const isDemo = !syncSummary;
+  const dateText = new Date(snapshot?.asOf ?? Date.now()).toLocaleDateString("pl-PL", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    weekday: "long",
+  });
 
   const instruments = useMemo(
-    () => (records ? buildInstrumentList(records, { fxRates: marketFxRates }) : []),
+    () =>
+      records
+        ? buildInstrumentList(records, {
+            asOf: new Date(),
+            fxRates: marketFxRates,
+            useLatestTransactionFxRate: true,
+            useMarketQuotes: true,
+          })
+        : [],
     [marketFxRates, records],
   );
   const transactions = useMemo(
@@ -730,10 +678,14 @@ export function DashboardOverview() {
     [records],
   );
 
-  const historySource = storeSnapshot ? snapshot.valuationSeries : SAMPLE_HISTORY;
+  if (!snapshot) {
+    return <DashboardLoading profileName={profile.name} dateText={dateText} />;
+  }
+
+  const historySource = snapshot.valuationSeries;
   const chartData = filterByPeriod(historySource, period);
-  const holdings = records ? toHoldingViews(instruments) : DEMO_HOLDINGS;
-  const txRows = records ? toTransactionViews(transactions) : DEMO_TRANSACTIONS;
+  const holdings = records ? toHoldingViews(instruments) : [];
+  const txRows = records ? toTransactionViews(transactions) : [];
   const allocation = normalizeAllocation(snapshot.allocation);
   const totalValue = snapshot.totalValue;
   const deltaPLN = calculateDeltaPLN(historySource);
@@ -742,16 +694,6 @@ export function DashboardOverview() {
   const cashflows = snapshot.cashflows;
   const invested = metrics.netInvested;
   const unrealized = totalValue - metrics.netInvested;
-  const dateText = new Date(snapshot.asOf).toLocaleDateString("pl-PL", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    weekday: "long",
-  });
-  const syncTimeText = syncSummary?.latestUpdatedAt
-    ? new Date(syncSummary.latestUpdatedAt).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })
-    : "15:12";
-
   const stat = (label: string, value: string, color: string = PALETTE.ink) => (
     <div style={{ flex: 1, minWidth: 86 }}>
       <div style={{ fontFamily: UI, fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: PALETTE.subtle }}>
@@ -774,13 +716,13 @@ export function DashboardOverview() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: UI, color: PALETTE.ink }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 10, padding: "2px 2px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 10, padding: DASHBOARD_HEAD_PADDING }}>
         <div>
           <div style={{ fontFamily: SERIF, fontSize: isMobile ? 26 : 31, fontWeight: 500, color: PALETTE.ink, letterSpacing: "-.01em" }}>
             Dzień dobry, <span style={{ fontStyle: "italic", color: PALETTE.brand }}>{firstName(profile.name)}</span>
           </div>
           <div style={{ fontFamily: UI, fontSize: 13, color: PALETTE.muted, marginTop: 3 }}>
-            {dateText} · {isDemo ? "tryb demo" : "wszystkie dane zsynchronizowane"}.
+            {dateText} · {syncSummary ? "wszystkie dane zsynchronizowane" : "dane z lokalnego snapshotu"}.
           </div>
         </div>
       </div>
@@ -814,7 +756,7 @@ export function DashboardOverview() {
                   className="v2pulse"
                   style={{ width: 6, height: 6, borderRadius: "50%", background: PALETTE.profit }}
                 />
-                {syncTimeText}
+                Live
               </span>
             </div>
             <div
@@ -900,6 +842,7 @@ export function DashboardOverview() {
         <TransactionsCard transactions={txRows} />
         <PortfoliosCard
           portfolios={snapshot.portfolios}
+          asOf={snapshot.asOf}
           dividends={cashflows.dividends}
           interest={cashflows.interest}
           fees={cashflows.fees}
@@ -1117,19 +1060,32 @@ function TransactionsCard({ transactions }: { transactions: TransactionView[] })
 
 function PortfoliosCard({
   portfolios,
+  asOf,
   dividends,
   interest,
   fees,
 }: {
-  portfolios: typeof sampleSnapshot.portfolios;
+  portfolios: PortfolioSummary[];
+  asOf: string;
   dividends: number;
   interest: number;
   fees: number;
 }) {
+  const asOfLabel = fmtDate(asOf);
+  const cashflowPeriod = `Narastająco do ${asOfLabel}`;
+  const cashflowRows = [
+    ["Dywidendy", cashflowPeriod, `+${fmt(dividends)} zł`, PALETTE.profit],
+    ["Odsetki", cashflowPeriod, `+${fmt(interest)} zł`, PALETTE.bonds],
+    ["Prowizje", cashflowPeriod, `-${fmt(fees)} zł`, PALETTE.loss],
+  ] as const;
+
   return (
     <Card>
       <Eyebrow>Portfele</Eyebrow>
       <div style={{ fontFamily: SERIF, fontSize: 19, fontWeight: 500, color: PALETTE.ink, margin: "4px 0 16px" }}>Podział na konta</div>
+      <div style={{ fontFamily: UI, fontSize: 11.5, color: PALETTE.subtle, margin: "-10px 0 16px" }}>
+        Wycena na {asOfLabel} · miniwykresy: ostatnie 30 dni · zmiana: 1D
+      </div>
       {portfolios.length === 0 ? (
         <div style={{ padding: "20px 0", color: PALETTE.subtle, fontSize: 13 }}>Brak portfeli do pokazania.</div>
       ) : (
@@ -1152,9 +1108,13 @@ function PortfoliosCard({
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
+                <div style={{ fontFamily: UI, fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: PALETTE.subtle, marginBottom: 3 }}>
+                  30 dni
+                </div>
                 <V2Spark data={series} color={color} />
-                <div style={{ fontFamily: UI, fontSize: 12, fontWeight: 700, color: portfolio.dailyChange >= 0 ? PALETTE.profit : PALETTE.loss, marginTop: 4 }}>
-                  {fmtPct(portfolio.dailyChange)}
+                <div style={{ display: "inline-flex", alignItems: "baseline", gap: 5, fontFamily: UI, fontSize: 12, fontWeight: 700, color: portfolio.dailyChange >= 0 ? PALETTE.profit : PALETTE.loss, marginTop: 4 }}>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: PALETTE.subtle, letterSpacing: ".06em" }}>1D</span>
+                  <span>{fmtPct(portfolio.dailyChange)}</span>
                 </div>
               </div>
             </div>
@@ -1163,14 +1123,13 @@ function PortfoliosCard({
       </div>
       )}
       <div style={{ display: "flex", gap: 10, marginTop: 14, paddingTop: 14, borderTop: `0.5px solid ${PALETTE.line2}` }}>
-        {[
-          ["Dywidendy", `+${fmt(dividends)} zł`, PALETTE.profit],
-          ["Odsetki", `+${fmt(interest)} zł`, PALETTE.bonds],
-          ["Prowizje", `-${fmt(fees)} zł`, PALETTE.loss],
-        ].map(([label, value, color]) => (
+        {cashflowRows.map(([label, period, value, color]) => (
           <div key={label} style={{ flex: 1 }}>
             <div style={{ fontFamily: UI, fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: PALETTE.subtle }}>
               {label}
+            </div>
+            <div style={{ fontFamily: UI, fontSize: 9.5, color: PALETTE.subtle, marginTop: 2 }}>
+              {period}
             </div>
             <div style={{ fontFamily: MONO, fontSize: 13.5, fontWeight: 600, color, marginTop: 3 }}>{value}</div>
           </div>
