@@ -4,6 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useState, useEffect, useMemo, type CSSProperties } from "react";
 import type { Route } from "next";
+import {
+  ArrowDownUp,
+  ArrowLeftRight,
+  Banknote,
+  BriefcaseBusiness,
+  ChartNoAxesColumn,
+  FileText,
+  FolderOpen,
+  Landmark,
+  LayoutDashboard,
+  LogOut,
+  Settings,
+  type LucideIcon,
+} from "lucide-react";
 import { createBrowserSupabaseClientOrNull } from "@/supabase/client";
 import { buildParitySnapshot } from "@/sync/records/parity-snapshot";
 import { useSyncStore } from "@/sync/store/sync-store";
@@ -81,7 +95,7 @@ function useHideOnScroll(threshold = 80) {
 type NavItem = {
   id: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
   href: Route;
   color?: string;
   value?: number;
@@ -95,29 +109,35 @@ type NavGroup = {
 const NAV_GROUPS: NavGroup[] = [
   {
     sec: null,
-    items: [{ id: "dashboard", label: "Dashboard", icon: "◧", href: "/dashboard" }],
+    items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" }],
   },
   {
     sec: "Portfele",
     items: [
-      { id: "portfolios", label: "Wszystkie portfele", icon: "◐", href: "/portfolios", exact: true },
+      {
+        id: "portfolios",
+        label: "Wszystkie portfele",
+        icon: BriefcaseBusiness,
+        href: "/portfolios",
+        exact: true,
+      },
     ],
   },
   {
     sec: "Analiza",
     items: [
-      { id: "transactions", label: "Transakcje", icon: "⇄", href: "/transactions" },
-      { id: "instruments", label: "Instrumenty", icon: "◈", href: "/instruments" },
-      { id: "earnings", label: "Zarobki", icon: "◇", href: "/earnings" },
-      { id: "benchmark", label: "Porównanie", icon: "◫", href: "/benchmark" },
-      { id: "reports", label: "Raporty", icon: "▤", href: "/reports" },
+      { id: "transactions", label: "Transakcje", icon: ArrowLeftRight, href: "/transactions" },
+      { id: "instruments", label: "Instrumenty", icon: Landmark, href: "/instruments" },
+      { id: "earnings", label: "Zarobki", icon: Banknote, href: "/earnings" },
+      { id: "benchmark", label: "Porównanie", icon: ChartNoAxesColumn, href: "/benchmark" },
+      { id: "reports", label: "Raporty", icon: FileText, href: "/reports" },
     ],
   },
   {
     sec: "System",
     items: [
-      { id: "import", label: "Import / Eksport", icon: "⇅", href: "/import" },
-      { id: "settings", label: "Ustawienia", icon: "⚙", href: "/settings" },
+      { id: "import", label: "Import / Eksport", icon: ArrowDownUp, href: "/import" },
+      { id: "settings", label: "Ustawienia", icon: Settings, href: "/settings" },
     ],
   },
 ];
@@ -174,7 +194,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   const portfolioItems: NavItem[] = (snapshot?.portfolios ?? []).map((portfolio) => ({
     id: `pf-${portfolio.id}`,
     label: portfolio.name,
-    icon: "◑",
+    icon: FolderOpen,
     href: `/portfolios/${portfolio.id}` as Route,
     value: portfolio.value,
   }));
@@ -229,6 +249,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
             )}
             {group.items.map((item) => {
               const active = isNavItemActive(item, pathname);
+              const Icon = item.icon;
               return (
                 <Link
                   key={item.id}
@@ -258,10 +279,10 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
                       display: "inline-flex", alignItems: "center", justifyContent: "center",
                       color: active ? COLORS.white : (item.color || COLORS.textMuted),
                       opacity: active ? 1 : 0.8,
-                      fontSize: 14, flexShrink: 0,
+                      flexShrink: 0,
                     }}
                   >
-                    {item.icon}
+                    <Icon size={15.5} strokeWidth={1.8} aria-hidden="true" />
                   </span>
                   <span style={{ fontSize: 13, fontWeight: active ? 600 : 500, flex: 1, fontFamily: TYPOGRAPHY.system, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {item.label}
@@ -342,7 +363,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
           onMouseEnter={(e) => { e.currentTarget.style.background = COLORS.textSoft; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
         >
-          <span style={{ fontSize: 14 }}>↩</span>
+          <LogOut size={14} strokeWidth={1.8} aria-hidden="true" />
           Wyloguj się
         </button>
       </div>
@@ -423,7 +444,7 @@ export function AppShell({
           position: "sticky", top: PAD, zIndex: 50,
           ...glassSurface,
           borderRadius: 14,
-          marginBottom: PAD,
+          marginBottom: PAD * 2,
           transform: topbarHidden ? `translateY(-${PAD * 2 + 56}px)` : "translateY(0)",
           opacity: topbarHidden ? 0 : 1,
           pointerEvents: topbarHidden ? "none" : "auto",

@@ -601,9 +601,16 @@ function buildPortfolioSummary(
   const valuation = valuePortfolio(computeLedger(transactions, asOf), dataset, asOf);
 
   const previousDay = endOfLocalDay(addLocalDays(asOf, -1));
+  // For the 1D comparison we want yesterday's POSITIONS at today's PRICES.
+  // If a market quote or manual valuation arrived today (date > previousDay),
+  // excluding it from the previous-day calculation would compare today's market
+  // price against yesterday's formula price, producing a spurious daily jump.
+  // Backdating any "future" prices to previousDay keeps the valuation source
+  // consistent across both days.
+  const datasetForPreviousDay = withPricesCappedAt(dataset, previousDay);
   const previousValue = valuePortfolio(
     computeLedger(transactions, previousDay),
-    dataset,
+    datasetForPreviousDay,
     previousDay,
   ).totalValue;
   const periodFlow = portfolioFlowIntoBaseAmount(transactions, previousDay, asOf);
@@ -626,6 +633,27 @@ function buildPortfolioSummary(
     dailyChange,
     positions: valuation.positionCount,
     sparkline,
+  };
+}
+
+// Returns a copy of dataset where any market quote or manual valuation whose
+// date is strictly after `cap` is backdated to `cap`. This lets the 1D
+// comparison use the same price source for both today and yesterday, avoiding
+// spurious jumps when a new quote/valuation appears with today's date.
+function withPricesCappedAt(dataset: ParsedDataset, cap: Date): ParsedDataset {
+  const capMs = cap.getTime();
+  const capStr = cap.toISOString();
+  const needsCap = (d: z.infer<typeof swiftDateSchema>) =>
+    toDate(d).getTime() > capMs;
+
+  return {
+    ...dataset,
+    marketQuotes: dataset.marketQuotes.map((q) =>
+      needsCap(q.date) ? { ...q, date: capStr } : q,
+    ),
+    manualValuations: dataset.manualValuations.map((mv) =>
+      needsCap(mv.date) ? { ...mv, date: capStr } : mv,
+    ),
   };
 }
 

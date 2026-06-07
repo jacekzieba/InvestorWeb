@@ -140,6 +140,12 @@ export function TransactionsPage() {
           currency: string;
           fees: number;
           taxes: number;
+          fxRateToBase?: number | null;
+          targetCurrency?: string | null;
+          targetGrossAmount?: number | null;
+          notes?: string;
+          sourcePortfolioID?: string | null;
+          transferKind?: string | null;
         };
 
         return {
@@ -157,6 +163,12 @@ export function TransactionsPage() {
           currency: payload.currency,
           fees: payload.fees,
           taxes: payload.taxes,
+          fxRateToBase: payload.fxRateToBase ?? null,
+          targetCurrency: payload.targetCurrency ?? null,
+          targetGrossAmount: payload.targetGrossAmount ?? null,
+          notes: payload.notes ?? "",
+          sourcePortfolioId: payload.sourcePortfolioID ?? null,
+          transferKind: payload.transferKind ?? null,
           updatedAt: record.updatedAt,
         } satisfies TransactionEditorDraft;
       });
