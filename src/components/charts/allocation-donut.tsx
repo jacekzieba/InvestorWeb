@@ -39,7 +39,7 @@ export function AllocationDonut({ slices }: { slices: Slice[] }) {
   let offset = 0;
 
   return (
-    <div>
+    <div data-testid="allocation-donut">
       <div style={{ display: "flex", justifyContent: "center", padding: "6px 0 14px" }}>
         <svg width={SIZE} height={SIZE}>
           {slices.map((slice, i) => {
@@ -102,10 +102,10 @@ export function AllocationDonut({ slices }: { slices: Slice[] }) {
               pointerEvents: "none",
             }}
           >
-            <text x={cx} y={cy - 2} textAnchor="middle" fontSize="22" fill={COLORS.text} fontWeight="700" style={{ fontVariantNumeric: "tabular-nums" }} fontFamily={TYPOGRAPHY.system}>
+            <text data-testid="allocation-donut-active-percent" x={cx} y={cy - 2} textAnchor="middle" fontSize="22" fill={COLORS.text} fontWeight="700" style={{ fontVariantNumeric: "tabular-nums" }} fontFamily={TYPOGRAPHY.system}>
               {activeSlice ? `${activeSlice.percent.toFixed(1)}%` : ""}
             </text>
-            <text x={cx} y={cy + 18} textAnchor="middle" fontSize="11" fill={COLORS.subtle} fontWeight="600" fontFamily={TYPOGRAPHY.system}>
+            <text data-testid="allocation-donut-active-label" x={cx} y={cy + 18} textAnchor="middle" fontSize="11" fill={COLORS.subtle} fontWeight="600" fontFamily={TYPOGRAPHY.system}>
               {activeSlice ? clampLabel(activeSlice.label) : ""}
             </text>
           </g>
@@ -119,6 +119,7 @@ export function AllocationDonut({ slices }: { slices: Slice[] }) {
           return (
             <div
               key={i}
+              data-testid="allocation-donut-legend"
               onMouseEnter={() => setActive(i)}
               onMouseLeave={() => setActive((prev) => (prev === i ? null : prev))}
               style={{
