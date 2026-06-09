@@ -9,8 +9,8 @@ import {
   valuationCsvTemplate,
   type CsvImportPreview,
 } from "@/features/import/import-parser";
-import { parseXtbXlsx, type XtbImportPreview } from "@/features/import/xtb-parser";
-import { parsePkoBondsXls, type PkoImportPreview } from "@/features/import/pko-parser";
+import { parseXtbXlsx } from "@/features/import/xtb-parser";
+import { parsePkoBondsXls } from "@/features/import/pko-parser";
 import type { RecordType } from "@/domain/models/investor-data";
 import { saveRecord } from "@/sync/records/record-writer";
 import { buildParitySnapshot } from "@/sync/records/parity-snapshot";
