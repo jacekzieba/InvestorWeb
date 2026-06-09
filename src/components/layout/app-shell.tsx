@@ -438,6 +438,20 @@ export function AppShell({
 
   const PAD = 12;
 
+  // Until the user data key is unlocked there is nothing meaningful to show —
+  // the dashboard would render demo/empty data. Mirror the native iOS/macOS
+  // flow: present a full-screen passphrase gate right after login/registration
+  // (the trusted-browser auto-unlock and "create backup" flows live inside
+  // SyncUnlockPanel, so a returning user on a trusted device passes through
+  // with just a brief spinner).
+  if (!records) {
+    return (
+      <AppLock>
+        <SyncUnlockGate initialUser={initialUser} onSyncLoaded={handleSyncLoaded} />
+      </AppLock>
+    );
+  }
+
   return (
     <AppLock>
     <div style={{ minHeight: "100vh", background: V2.page, padding: `${PAD}px ${PAD}px ${PAD + 8}px`, overflowX: "hidden" }}>
@@ -655,12 +669,6 @@ export function AppShell({
 
         {/* Main content — capped on very wide screens (topbar + sidebar stay full-bleed) */}
         <main style={{ flex: 1, minWidth: 0, maxWidth: 1240, marginInline: "auto", width: "100%", paddingBottom: 4 }}>
-          {!records && (
-            <GlobalSyncPanel
-              initialUser={initialUser}
-              onSyncLoaded={handleSyncLoaded}
-            />
-          )}
           {children}
         </main>
       </div>
@@ -682,7 +690,10 @@ export function AppShell({
   );
 }
 
-function GlobalSyncPanel({
+// Full-screen passphrase gate shown after login/registration until the user
+// data key is unlocked (parity with native iOS/macOS). Centered card on the
+// app background, matching the login screen aesthetic.
+function SyncUnlockGate({
   initialUser,
   onSyncLoaded,
 }: {
@@ -690,33 +701,72 @@ function GlobalSyncPanel({
   onSyncLoaded(result: SyncLoadResult | null): void;
 }) {
   return (
-    <section
+    <div
       style={{
-        ...glassSurface,
-        borderRadius: 14,
-        overflow: "hidden",
-        marginBottom: 12,
+        minHeight: "100vh",
+        background: V2.page,
+        display: "grid",
+        placeItems: "center",
+        padding: "24px 16px",
       }}
     >
-      <div
+      <section
         style={{
-          padding: "14px 22px",
-          borderBottom: `0.5px solid ${COLORS.lineSoft}`,
+          width: "100%",
+          maxWidth: 460,
+          ...glassSurface,
+          borderRadius: 18,
+          boxShadow: SHADOWS.cardStrong,
+          overflow: "hidden",
         }}
       >
-        <div
-          style={{
-            fontSize: 10.5,
-            fontWeight: 700,
-            color: COLORS.subtle,
-            textTransform: "uppercase",
-            letterSpacing: ".10em",
-          }}
-        >
-          Synchronizacja danych
+        {/* Brand + heading */}
+        <div style={{ padding: "28px 24px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 9,
+                background: COLORS.text,
+                color: COLORS.white,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: TYPOGRAPHY.serif,
+                fontSize: 17,
+                fontWeight: 600,
+                boxShadow: SHADOWS.button,
+              }}
+            >
+              I
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.text }}>Investor</div>
+              <div
+                style={{
+                  fontFamily: TYPOGRAPHY.mono,
+                  fontSize: 9.5,
+                  color: COLORS.subtle,
+                  textTransform: "uppercase",
+                  letterSpacing: ".10em",
+                  marginTop: 1,
+                }}
+              >
+                Web · v2
+              </div>
+            </div>
+          </div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.text, letterSpacing: "-0.01em" }}>
+            Odblokuj swoje dane
+          </h1>
+          <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>
+            Wprowadź passphrase, aby odszyfrować portfel lokalnie w przeglądarce.
+          </p>
         </div>
-      </div>
-      <SyncUnlockPanel initialUser={initialUser} onSyncLoaded={onSyncLoaded} />
-    </section>
+
+        <SyncUnlockPanel initialUser={initialUser} onSyncLoaded={onSyncLoaded} />
+      </section>
+    </div>
   );
 }

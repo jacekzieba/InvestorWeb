@@ -175,6 +175,20 @@ function fmtDate(iso: string) {
   });
 }
 
+function formatLastSync(ts: number | null): string {
+  if (!ts) return "Brak synchronizacji";
+  const now = Date.now();
+  const diffSec = Math.max(0, Math.round((now - ts) / 1000));
+  if (diffSec < 60) return "Zsynchronizowano przed chwilą";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `Synchronizacja ${diffMin} min temu`;
+  const time = new Date(ts).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  const isToday = new Date(ts).toDateString() === new Date(now).toDateString();
+  if (isToday) return `Synchronizacja o ${time}`;
+  const date = new Date(ts).toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+  return `Synchronizacja ${date}, ${time}`;
+}
+
 function useMedia(query: string) {
   const [matches, setMatches] = useState(false);
 
@@ -667,6 +681,7 @@ export function DashboardOverview() {
   const storeSnapshot = useSyncStore((state) => state.snapshot);
   const records = useSyncStore((state) => state.records);
   const marketFxRates = useSyncStore((state) => state.marketFxRates);
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const profile = useProfile();
   const [period, setPeriod] = useState<Period>("1Y");
   const isMobile = useMedia("(max-width: 720px)");
@@ -686,6 +701,12 @@ export function DashboardOverview() {
     [marketFxRates, records, storeSnapshot],
   );
   const syncSummary = records ? summarizeDecryptedRecords(records) : null;
+  const [syncTick, setSyncTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setSyncTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const lastSyncLabel = useMemo(() => formatLastSync(lastSyncedAt), [lastSyncedAt, syncTick]);
   const dateText = new Date(snapshot?.asOf ?? Date.now()).toLocaleDateString("pl-PL", {
     day: "numeric",
     month: "long",
@@ -771,24 +792,24 @@ export function DashboardOverview() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
               <Eyebrow>Wartość portfela</Eyebrow>
               <span
+                title={lastSyncedAt ? new Date(lastSyncedAt).toLocaleString("pl-PL") : undefined}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
                   fontFamily: UI,
                   fontSize: 11,
-                  fontWeight: 600,
-                  color: PALETTE.brand,
-                  background: mix(PALETTE.brand, 0.1),
+                  fontWeight: 500,
+                  color: PALETTE.muted,
+                  background: mix(PALETTE.ink, 0.05),
                   padding: "5px 10px",
                   borderRadius: 99,
                 }}
               >
                 <span
-                  className="v2pulse"
-                  style={{ width: 6, height: 6, borderRadius: "50%", background: PALETTE.profit }}
+                  style={{ width: 6, height: 6, borderRadius: "50%", background: lastSyncedAt ? PALETTE.profit : PALETTE.subtle }}
                 />
-                Live
+                {lastSyncLabel}
               </span>
             </div>
             <div
