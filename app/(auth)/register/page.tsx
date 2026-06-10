@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { LoginForm } from "@/features/auth/login-form";
+import { SignupForm } from "@/features/auth/signup-form";
 import { COLORS, SHADOWS, SURFACES } from "@/lib/design-tokens";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <main
       style={{
@@ -58,19 +58,20 @@ export default function LoginPage() {
             </div>
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: COLORS.text, letterSpacing: "-0.01em" }}>
-            Logowanie
+            Załóż konto
           </h1>
           <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>
-            Po zalogowaniu klucz danych będzie odblokowywany lokalnie w przeglądarce.
+            Po potwierdzeniu adresu email ustawisz osobne hasło szyfrujące — Twoje dane
+            są szyfrowane lokalnie i nigdy nie opuszczają przeglądarki w formie jawnej.
           </p>
         </div>
 
-        <LoginForm />
+        <SignupForm />
 
         <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 24, textAlign: "center" }}>
-          Nie masz konta?{" "}
-          <Link href="/register" style={{ color: COLORS.text, fontWeight: 600 }}>
-            Załóż konto
+          Masz już konto?{" "}
+          <Link href="/login" style={{ color: COLORS.text, fontWeight: 600 }}>
+            Zaloguj się
           </Link>
         </p>
       </section>

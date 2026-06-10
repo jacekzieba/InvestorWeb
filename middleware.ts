@@ -34,14 +34,15 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Redirect authenticated users away from login
-  if (user && pathname === "/login") {
+  // Redirect authenticated users away from the auth pages
+  if (user && (pathname === "/login" || pathname === "/register")) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   // Protect all app routes
   const isAppRoute =
     !pathname.startsWith("/login") &&
+    !pathname.startsWith("/register") &&
     !pathname.startsWith("/auth/") &&
     !pathname.startsWith("/api/health") &&
     !pathname.startsWith("/api/market-data/") &&
