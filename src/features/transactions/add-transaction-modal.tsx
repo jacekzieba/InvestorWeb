@@ -25,6 +25,11 @@ import {
 import { useSyncStore } from "@/sync/store/sync-store";
 import { refreshSyncStore, saveRecord } from "@/sync/records/record-writer";
 import {
+  getTelemetryService,
+  TelemetryEvent,
+  telemetrySnakeCased,
+} from "@/lib/telemetry";
+import {
   makeTransactionPayload,
   swiftReferenceSeconds,
 } from "@/sync/records/macos-payloads";
@@ -583,6 +588,13 @@ export function AddTransactionModal({
       if (!result.queued) {
         const { records: newRecords, snapshot } = await refreshSyncStore(supabase, userDataKey);
         setSync(newRecords, snapshot);
+      }
+
+      if (!initialValue) {
+        getTelemetryService().signal(TelemetryEvent.transactionAdded, {
+          type: telemetrySnakeCased(txType),
+          entry_method: "manual",
+        });
       }
 
       handleClose();

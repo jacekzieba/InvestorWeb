@@ -23,6 +23,7 @@ import { createBrowserSupabaseClientOrNull } from "@/supabase/client";
 import { buildParitySnapshot } from "@/sync/records/parity-snapshot";
 import { useSyncStore } from "@/sync/store/sync-store";
 import { AddTransactionModal } from "@/features/transactions/add-transaction-modal";
+import { TelemetryConsentBanner } from "@/features/telemetry/telemetry-consent-banner";
 import { CommandPalette } from "@/features/search/command-palette";
 import { PendingSyncStatus } from "@/features/sync/pending-sync-status";
 import {
@@ -675,6 +676,7 @@ export function AppShell({
 
       {/* Global modal */}
       <AddTransactionModal />
+      <TelemetryConsentBanner />
       <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       {paritySnapshot && (
         <script

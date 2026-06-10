@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import { useSyncStore } from "@/sync/store/sync-store";
+import { useSampleDataSignal } from "@/features/telemetry/use-sample-data-signal";
 import { sampleSnapshot } from "@/features/dashboard/sample-data";
 import { AllocationDonut } from "@/components/charts/allocation-donut";
 import { AreaChart } from "@/components/charts/area-chart";
@@ -117,6 +118,7 @@ export function ReportsPage() {
   const storeSnapshot = useSyncStore((s) => s.snapshot);
   const isDemo = !storeSnapshot;
   const snapshot = storeSnapshot ?? sampleSnapshot;
+  useSampleDataSignal(isDemo);
   const [report, setReport] = useState<ReportId>("performance");
 
   const perf = snapshot.performanceSeries.length >= 2 ? snapshot.performanceSeries : snapshot.valuationSeries;

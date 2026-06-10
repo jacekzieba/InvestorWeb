@@ -18,6 +18,7 @@ import {
   type NotificationPrefs,
 } from "@/features/profile/profile-store";
 import { AppLockSettingsRow } from "@/features/auth/app-lock";
+import { useTelemetryConsent } from "@/features/telemetry/use-telemetry-consent";
 
 function Switch({ on, onChange }: { on: boolean; onChange: (value: boolean) => void }) {
   return (
@@ -313,15 +314,14 @@ function DisplaySection() {
 
 // ── Privacy / diagnostics ─────────────────────────────────────────
 function PrivacySection() {
-  const [analytics, setAnalytics] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem("investor-analytics-opt-out") !== "true";
-  });
+  const { enabled, acknowledged, canWrite, saving, error, setConsent } =
+    useTelemetryConsent();
 
-  function toggle(v: boolean) {
-    setAnalytics(v);
-    localStorage.setItem("investor-analytics-opt-out", String(!v));
-  }
+  const desc = !canWrite
+    ? "Odblokuj synchronizację, aby zmienić to ustawienie."
+    : !acknowledged
+      ? "Pomóż ulepszyć aplikację — wysyłaj anonimowe zdarzenia o korzystaniu z aplikacji. Żadne dane finansowe nie są przesyłane."
+      : "Anonimowe zdarzenia o korzystaniu z aplikacji. Żadne kwoty, instrumenty ani dane portfela nie są przesyłane. Wybór synchronizuje się na wszystkich urządzeniach.";
 
   return (
     <Section eyebrow="Prywatność" title="Bezpieczeństwo i diagnostyka">
@@ -329,10 +329,18 @@ function PrivacySection() {
         <AppLockSettingsRow />
       </div>
       <Row
-        label="Anonimowe raporty o błędach"
-        desc="Pomóż ulepszyć aplikację — wysyłaj anonimowe zdarzenia diagnostyczne. Żadne dane finansowe nie są przesyłane."
+        label="Anonimowa telemetria"
+        desc={error ?? desc}
         last
-        control={<Switch on={analytics} onChange={toggle} />}
+        control={
+          <Switch
+            on={canWrite && acknowledged && enabled}
+            onChange={(v) => {
+              if (!canWrite || saving) return;
+              void setConsent(v);
+            }}
+          />
+        }
       />
     </Section>
   );

@@ -8,6 +8,32 @@ export function nowSwiftReferenceSeconds() {
   return swiftReferenceSeconds(new Date());
 }
 
+/**
+ * Build a `settings` payload by merging consent overrides onto the existing
+ * record. Spreading `existing` preserves fields web does not manage (tax flags,
+ * fx provider, language, …) so a web write never clobbers native-only settings.
+ */
+export function makeSettingsPayload(input: {
+  id: string;
+  existing?: Record<string, unknown> | null;
+  telemetryEnabled?: boolean;
+  hasAcknowledgedPrivacyDisclosure?: boolean;
+  updatedAt?: number | string;
+}) {
+  return {
+    ...(input.existing ?? {}),
+    id: input.id,
+    recordType: "settings",
+    ...(input.telemetryEnabled !== undefined
+      ? { telemetryEnabled: input.telemetryEnabled }
+      : {}),
+    ...(input.hasAcknowledgedPrivacyDisclosure !== undefined
+      ? { hasAcknowledgedPrivacyDisclosure: input.hasAcknowledgedPrivacyDisclosure }
+      : {}),
+    updatedAt: input.updatedAt ?? nowSwiftReferenceSeconds(),
+  };
+}
+
 export function makeAccountPayload(input: {
   id: string;
   name: string;
