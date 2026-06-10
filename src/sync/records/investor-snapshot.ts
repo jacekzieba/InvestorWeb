@@ -9,6 +9,7 @@ import type {
   PortfolioDetail,
   PortfolioMetrics,
   PortfolioSummary,
+  SnapshotSettings,
   TransactionRow,
 } from "@/domain/models/investor-data";
 import {
@@ -269,6 +270,33 @@ export function buildInvestorDataSnapshot(
     performanceSeries,
     allocation: buildAllocation(accounts, dataset, asOf, totalValue),
     metrics,
+    settings: getTelemetrySettings(dataset),
+  };
+}
+
+/** Latest settings record by `updatedAt`. Used for both base currency and the
+ * telemetry gate so they agree on which record "wins". */
+function getLatestSettings(dataset: ParsedDataset): SettingsPayload | undefined {
+  return dataset.settings
+    .slice()
+    .sort(
+      (left, right) =>
+        toDate(left.updatedAt ?? 0).getTime() -
+        toDate(right.updatedAt ?? 0).getTime(),
+    )
+    .at(-1);
+}
+
+/** Surface only the gate-relevant flags. Defaults mirror native
+ * `InvestorAppSettings`: telemetry opt-in is on, but stays gated until the
+ * privacy disclosure is acknowledged — so no record means the gate is closed. */
+function getTelemetrySettings(dataset: ParsedDataset): SnapshotSettings {
+  const latest = getLatestSettings(dataset);
+  return {
+    telemetryEnabled: latest?.telemetryEnabled ?? true,
+    hasAcknowledgedPrivacyDisclosure:
+      latest?.hasAcknowledgedPrivacyDisclosure ?? false,
+    syncMode: latest?.syncMode ?? null,
   };
 }
 

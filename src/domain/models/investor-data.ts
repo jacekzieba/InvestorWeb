@@ -76,6 +76,17 @@ export type InvestorDataSnapshot = {
   performanceSeries: ValuationPoint[];
   allocation: AllocationSlice[];
   metrics: PortfolioMetrics;
+  /** Gate-relevant settings surfaced for telemetry. Optional: demo/sample
+   * snapshots omit it, which keeps the telemetry gate closed by default. */
+  settings?: SnapshotSettings;
+};
+
+/** Subset of the synced settings record needed to gate telemetry. Carries no
+ * financial values — only consent flags and the sync mode. */
+export type SnapshotSettings = {
+  telemetryEnabled: boolean;
+  hasAcknowledgedPrivacyDisclosure: boolean;
+  syncMode: string | null;
 };
 
 export type HoldingRow = {

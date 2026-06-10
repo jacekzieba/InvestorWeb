@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { FakeSyncBootstrap } from "@/sync/dev/fake-sync-bootstrap";
 import { MarketFxBootstrap } from "@/features/sync/market-fx-bootstrap";
+import { TelemetryBootstrap } from "@/features/telemetry/telemetry-bootstrap";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -22,6 +23,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <FakeSyncBootstrap />
       <MarketFxBootstrap />
+      <TelemetryBootstrap />
       {children}
     </QueryClientProvider>
   );

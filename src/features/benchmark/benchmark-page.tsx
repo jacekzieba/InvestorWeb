@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { sampleSnapshot, SAMPLE_HISTORY } from "@/features/dashboard/sample-data";
 import { TYPOGRAPHY } from "@/lib/design-tokens";
 import { useSyncStore } from "@/sync/store/sync-store";
+import { useSampleDataSignal } from "@/features/telemetry/use-sample-data-signal";
 
 const SERIF = TYPOGRAPHY.serif;
 const UI = TYPOGRAPHY.system;
@@ -457,7 +458,9 @@ function Donut({
 }
 
 export function BenchmarkPage() {
-  const snapshot = useSyncStore((state) => state.snapshot) ?? sampleSnapshot;
+  const storeSnapshot = useSyncStore((state) => state.snapshot);
+  const snapshot = storeSnapshot ?? sampleSnapshot;
+  useSampleDataSignal(!storeSnapshot);
   const [selectedId, setSelectedId] = useState("allweather");
   const isMobile = useMedia("(max-width: 720px)");
   const isTablet = useMedia("(max-width: 1140px)");

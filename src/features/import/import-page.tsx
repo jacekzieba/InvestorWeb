@@ -20,6 +20,11 @@ import {
   buildInstrumentList,
 } from "@/sync/records/investor-snapshot";
 import type { DecryptedRecord } from "@/sync/records/encrypted-records";
+import {
+  getTelemetryService,
+  TelemetryEvent,
+  telemetryRowBucket,
+} from "@/lib/telemetry";
 import { useSyncStore } from "@/sync/store/sync-store";
 import { V2, V2Card, V2ScreenHead, V2_TYPE, v2Mix } from "@/lib/v2-design";
 
@@ -28,6 +33,19 @@ const SERIF = V2_TYPE.serif;
 const MONO = V2_TYPE.mono;
 
 type ImportFormat = "generic" | "xtb" | "pko";
+
+/** Maps the UI format to the contract `provider` value. Generic CSV/table
+ * imports are not a broker, so they carry no broker telemetry. */
+function brokerProvider(format: ImportFormat): string | null {
+  switch (format) {
+    case "xtb":
+      return "xtb";
+    case "pko":
+      return "pko_bonds";
+    default:
+      return null;
+  }
+}
 
 function downloadBlob(content: string, filename: string, type: string) {
   const blob = new Blob([content], { type });
@@ -118,6 +136,10 @@ export function ImportPage() {
     setPreview(null);
     setFileName(file?.name ?? null);
     if (!file) return;
+    const provider = brokerProvider(importFormat);
+    if (provider) {
+      getTelemetryService().signal(TelemetryEvent.brokerImportStarted, { provider });
+    }
     try {
       const extension = file.name.split(".").pop()?.toLowerCase();
 
@@ -160,6 +182,12 @@ export function ImportPage() {
       }
     } catch (parseError) {
       setError(parseError instanceof Error ? parseError.message : "Nie udało się odczytać pliku.");
+      if (provider) {
+        getTelemetryService().signal(TelemetryEvent.brokerImportFailed, {
+          provider,
+          reason: "parse_error",
+        });
+      }
     }
   }
 
@@ -171,6 +199,7 @@ export function ImportPage() {
     setSaving(true);
     setError(null);
     setResult(null);
+    const provider = brokerProvider(importFormat);
     try {
       if (dryRun) {
         const newInstCount = preview.newInstrumentPayloads?.length ?? 0;
@@ -208,10 +237,23 @@ export function ImportPage() {
       });
       setSync(nextRecords, nextSnapshot);
       setResult(`Zaimportowano ${preview.validRows.length - queued} rekordów${queued > 0 ? `, ${queued} czeka w kolejce sync` : ""}.`);
+      if (provider) {
+        getTelemetryService().signal(TelemetryEvent.brokerImportSucceeded, {
+          provider,
+          result: "committed",
+          row_bucket: telemetryRowBucket(preview.validRows.length),
+        });
+      }
       setPreview(null);
       setFileName(null);
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : "Nie udało się zapisać importu.");
+      if (provider) {
+        getTelemetryService().signal(TelemetryEvent.brokerImportFailed, {
+          provider,
+          reason: "commit_error",
+        });
+      }
     } finally {
       setSaving(false);
     }

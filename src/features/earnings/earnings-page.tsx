@@ -40,6 +40,11 @@ import { parsePositiveAmount } from "@/lib/parse-amount";
 import { V2, V2Badge, V2Button, V2Card, V2Kpi, V2ScreenHead, V2_TYPE, v2InputStyle, v2Mix, v2SelectStyle } from "@/lib/v2-design";
 import { buildIncomeLists, buildInvestorDataSnapshot } from "@/sync/records/investor-snapshot";
 import { deleteRecord, refreshSyncStore, saveRecord } from "@/sync/records/record-writer";
+import {
+  getTelemetryService,
+  TelemetryEvent,
+  telemetrySnakeCased,
+} from "@/lib/telemetry";
 import { useSyncStore } from "@/sync/store/sync-store";
 
 const EMPLOYMENT_TYPES: EmploymentType[] = ["employment", "business"];
@@ -459,6 +464,8 @@ export function EarningsPage() {
     });
     const id = duplicate?.id ?? draft.id;
     const baseUpdatedAt = duplicate?.sourceUpdatedAt ?? draft.sourceUpdatedAt;
+    // A genuine new earning: not matched to an existing record and not an edit.
+    const isNewEarning = !duplicate && draft.sourceUpdatedAt == null;
     const payload = {
       recordType: "income",
       id,
@@ -497,6 +504,11 @@ export function EarningsPage() {
         { baseUpdatedAt },
       );
       if (!result.queued) await refreshAfterWrite();
+      if (isNewEarning) {
+        getTelemetryService().signal(TelemetryEvent.earningAdded, {
+          employment_type: telemetrySnakeCased(draft.employmentType),
+        });
+      }
       setMessage(result.queued ? "Zarobek czeka w kolejce sync." : "Zarobek zapisany.");
       setEditingEarning(null);
     } catch (error) {
