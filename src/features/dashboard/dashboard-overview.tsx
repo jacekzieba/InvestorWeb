@@ -701,12 +701,13 @@ export function DashboardOverview() {
     [marketFxRates, records, storeSnapshot],
   );
   const syncSummary = records ? summarizeDecryptedRecords(records) : null;
-  const [syncTick, setSyncTick] = useState(0);
+  // Re-render every 30s so the relative "last sync" label stays fresh.
+  const [, bumpSyncTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setSyncTick((t) => t + 1), 30_000);
+    const id = setInterval(() => bumpSyncTick((t) => t + 1), 30_000);
     return () => clearInterval(id);
   }, []);
-  const lastSyncLabel = useMemo(() => formatLastSync(lastSyncedAt), [lastSyncedAt, syncTick]);
+  const lastSyncLabel = formatLastSync(lastSyncedAt);
   const dateText = new Date(snapshot?.asOf ?? Date.now()).toLocaleDateString("pl-PL", {
     day: "numeric",
     month: "long",

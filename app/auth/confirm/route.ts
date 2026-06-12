@@ -9,6 +9,9 @@ import { createServerSupabaseClient } from "@/supabase/server";
  * To use it, point the Supabase "Confirm signup" email template at:
  *   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup
  *
+ * The "Reset password" template can use the same handler:
+ *   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password
+ *
  * The default template (which redirects with a `code`) is handled by /auth/callback,
  * so either configuration works out of the box.
  */

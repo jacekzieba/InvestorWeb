@@ -234,6 +234,15 @@ export function PortfolioListPage() {
           </div>
         )}
 
+        {snapshot && snapshot.portfolios.length === 0 && (
+          <div style={{ padding: "48px 22px", textAlign: "center" }}>
+            <div style={{ fontSize: 32, opacity: 0.12, marginBottom: 12 }}>◎</div>
+            <div style={{ fontSize: 14, color: SUBTLE }}>
+              Nie masz jeszcze żadnego portfela — utwórz pierwszy przyciskiem powyżej.
+            </div>
+          </div>
+        )}
+
         {snapshot?.portfolios.map((pf, i) => {
           const color = PORTFOLIO_COLORS[i % PORTFOLIO_COLORS.length];
           const pct = snapshot.totalValue > 0 ? (pf.value / snapshot.totalValue) * 100 : 0;

@@ -40,9 +40,13 @@ export async function middleware(request: NextRequest) {
   }
 
   // Protect all app routes
+  // /reset-password stays public: the recovery link may land without a session,
+  // and the form itself explains how to request a fresh link.
   const isAppRoute =
     !pathname.startsWith("/login") &&
     !pathname.startsWith("/register") &&
+    !pathname.startsWith("/forgot-password") &&
+    !pathname.startsWith("/reset-password") &&
     !pathname.startsWith("/auth/") &&
     !pathname.startsWith("/api/health") &&
     !pathname.startsWith("/api/market-data/") &&

@@ -19,6 +19,9 @@ import {
 } from "@/features/profile/profile-store";
 import { AppLockSettingsRow } from "@/features/auth/app-lock";
 import { useTelemetryConsent } from "@/features/telemetry/use-telemetry-consent";
+import { createBrowserSupabaseClientOrNull } from "@/supabase/client";
+import { clearCachedUserDataKey } from "@/sync/encryption/key-cache";
+import { clearPendingSyncOperations } from "@/sync/records/record-writer";
 
 function Switch({ on, onChange }: { on: boolean; onChange: (value: boolean) => void }) {
   return (
@@ -202,18 +205,7 @@ export function SettingsPage() {
       <DisplaySection />
       <PrivacySection />
 
-      <V2Card style={{ borderColor: v2Mix(V2.loss, 0.3) }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontFamily: V2_TYPE.ui, fontSize: 13.5, fontWeight: 600, color: V2.ink }}>Eksport i usunięcie danych</div>
-            <div style={{ fontFamily: V2_TYPE.ui, fontSize: 12, color: V2.muted, marginTop: 2 }}>Pobierz pełną kopię danych albo przejdź do importu/eksportu.</div>
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <Link href="/import" style={{ padding: "9px 15px", borderRadius: 10, border: `0.5px solid ${V2.line}`, background: V2.card, color: V2.ink, fontFamily: V2_TYPE.ui, fontSize: 12.5, fontWeight: 600, textDecoration: "none" }}>Eksportuj wszystko</Link>
-            <button disabled style={{ padding: "9px 15px", borderRadius: 10, border: `0.5px solid ${v2Mix(V2.loss, 0.4)}`, background: v2Mix(V2.loss, 0.08), color: V2.loss, fontFamily: V2_TYPE.ui, fontSize: 12.5, fontWeight: 600, opacity: 0.48 }}>Usuń konto</button>
-          </div>
-        </div>
-      </V2Card>
+      <DangerZone />
     </div>
   );
 }
@@ -331,7 +323,6 @@ function PrivacySection() {
       <Row
         label="Anonimowa telemetria"
         desc={error ?? desc}
-        last
         control={
           <Switch
             on={canWrite && acknowledged && enabled}
@@ -342,7 +333,118 @@ function PrivacySection() {
           />
         }
       />
+      <Row
+        label="Pliki cookie"
+        desc="Aplikacja używa wyłącznie niezbędnych cookies sesji Supabase, które utrzymują zalogowanie. Nie używamy cookies reklamowych ani śledzących, więc nie wymagają one zgody."
+        control={<span />}
+      />
+      <Row
+        label="Dane w tej przeglądarce"
+        desc="W localStorage trzymamy ustawienia interfejsu, profil i kolejkę synchronizacji (wyłącznie zaszyfrowane rekordy), a w IndexedDB — opcjonalnie zapamiętany klucz odszyfrowywania, usuwany przy wylogowaniu. Odszyfrowane dane portfela istnieją tylko w pamięci karty."
+        last
+        control={<span />}
+      />
     </Section>
+  );
+}
+
+// ── Danger zone: account deletion ─────────────────────────────────
+function DangerZone() {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function deleteAccount() {
+    setDeleting(true);
+    setError(null);
+
+    const supabase = createBrowserSupabaseClientOrNull();
+    if (!supabase) {
+      setError("Brak konfiguracji Supabase w .env.local.");
+      setDeleting(false);
+      return;
+    }
+
+    try {
+      const { data } = await supabase.auth.getUser();
+      const userId = data.user?.id;
+      if (!userId) {
+        setError("Brak zalogowanego użytkownika.");
+        setDeleting(false);
+        return;
+      }
+
+      const { error: fnError } = await supabase.functions.invoke("delete-account");
+      if (fnError) throw fnError;
+
+      clearPendingSyncOperations();
+      await clearCachedUserDataKey(userId).catch(() => {});
+      // The remote user no longer exists, so server-side sign-out may fail.
+      await supabase.auth.signOut().catch(() => {});
+      window.location.assign("/login");
+    } catch {
+      setError("Nie udało się usunąć konta. Spróbuj ponownie.");
+      setDeleting(false);
+    }
+  }
+
+  const buttonBase: React.CSSProperties = {
+    padding: "9px 15px",
+    borderRadius: 10,
+    fontFamily: V2_TYPE.ui,
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: deleting ? "not-allowed" : "pointer",
+  };
+
+  return (
+    <V2Card style={{ borderColor: v2Mix(V2.loss, 0.3) }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, maxWidth: 520 }}>
+          <div style={{ fontFamily: V2_TYPE.ui, fontSize: 13.5, fontWeight: 600, color: V2.ink }}>Eksport i usunięcie danych</div>
+          <div style={{ fontFamily: V2_TYPE.ui, fontSize: 12, color: V2.muted, marginTop: 2 }}>
+            {confirming
+              ? "Konto oraz wszystkie zaszyfrowane dane w chmurze zostaną trwale usunięte. Dane zapisane lokalnie w aplikacjach na innych urządzeniach pozostaną. Tej operacji nie można cofnąć."
+              : "Pobierz pełną kopię danych albo trwale usuń konto wraz z danymi w chmurze."}
+          </div>
+          {error && (
+            <div style={{ fontFamily: V2_TYPE.ui, fontSize: 12, color: V2.loss, marginTop: 4 }}>{error}</div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          {confirming ? (
+            <>
+              <button
+                onClick={() => { setConfirming(false); setError(null); }}
+                disabled={deleting}
+                style={{ ...buttonBase, border: `0.5px solid ${V2.line}`, background: V2.card, color: V2.ink }}
+              >
+                Anuluj
+              </button>
+              <button
+                onClick={() => void deleteAccount()}
+                disabled={deleting}
+                style={{ ...buttonBase, border: "none", background: V2.loss, color: "#fff", opacity: deleting ? 0.6 : 1 }}
+              >
+                {deleting ? "Usuwanie…" : "Usuń trwale"}
+              </button>
+            </>
+          ) : (
+            <>
+              <Link href="/import" style={{ ...buttonBase, border: `0.5px solid ${V2.line}`, background: V2.card, color: V2.ink, textDecoration: "none" }}>
+                Eksportuj wszystko
+              </Link>
+              <button
+                onClick={() => setConfirming(true)}
+                style={{ ...buttonBase, border: `0.5px solid ${v2Mix(V2.loss, 0.4)}`, background: v2Mix(V2.loss, 0.08), color: V2.loss }}
+              >
+                Usuń konto
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </V2Card>
   );
 }
 

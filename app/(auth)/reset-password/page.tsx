@@ -1,8 +1,7 @@
-import Link from "next/link";
-import { LoginForm } from "@/features/auth/login-form";
+import { ResetPasswordForm } from "@/features/auth/reset-password-form";
 import { COLORS, SHADOWS, SURFACES } from "@/lib/design-tokens";
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   return (
     <main
       style={{
@@ -58,26 +57,14 @@ export default function LoginPage() {
             </div>
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: COLORS.text, letterSpacing: "-0.01em" }}>
-            Logowanie
+            Nowe hasło
           </h1>
           <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>
-            Po zalogowaniu klucz danych będzie odblokowywany lokalnie w przeglądarce.
+            Ustaw nowe hasło logowania do konta.
           </p>
         </div>
 
-        <LoginForm />
-
-        <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 24, textAlign: "center" }}>
-          Nie masz konta?{" "}
-          <Link href="/register" style={{ color: COLORS.text, fontWeight: 600 }}>
-            Załóż konto
-          </Link>
-        </p>
-        <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 8, textAlign: "center" }}>
-          <Link href="/forgot-password" style={{ color: COLORS.text, fontWeight: 600 }}>
-            Nie pamiętasz hasła?
-          </Link>
-        </p>
+        <ResetPasswordForm />
       </section>
     </main>
   );
